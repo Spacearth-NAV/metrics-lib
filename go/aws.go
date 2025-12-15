@@ -21,9 +21,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 )
 
 type metricInfo struct {
@@ -43,7 +44,7 @@ type awsCloudWatchServer struct {
 	namespace   string
 	fixedLabels []Label
 
-	client *cloudwatch.CloudWatch
+	client *cloudwatch.Client
 
 	data   chan metricData
 	cancel context.CancelFunc
@@ -61,12 +62,12 @@ func newAmazonCloudwatchServer(namespace string, fixedLabels ...Label) (Server, 
 		fixedLabels: fixedLabels,
 	}
 
-	sess, err := session.NewSession()
+	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AWS SDK session: %w", err)
+		return nil, fmt.Errorf("failed to load AWS SDK config: %w", err)
 	}
 
-	res.client = cloudwatch.New(sess)
+	res.client = cloudwatch.NewFromConfig(cfg)
 
 	var ctx context.Context
 	ctx, res.cancel = context.WithCancel(context.Background())
@@ -78,18 +79,18 @@ func newAmazonCloudwatchServer(namespace string, fixedLabels ...Label) (Server, 
 	return res, nil
 }
 
-func (a *awsCloudWatchServer) dimensions(m metricInfo) []*cloudwatch.Dimension {
-	res := make([]*cloudwatch.Dimension, len(m.labels)+len(a.fixedLabels))
+func (a *awsCloudWatchServer) dimensions(m metricInfo) []types.Dimension {
+	res := make([]types.Dimension, len(m.labels)+len(a.fixedLabels))
 
 	for _, l := range m.labels {
-		res = append(res, &cloudwatch.Dimension{
+		res = append(res, types.Dimension{
 			Name:  aws.String(l.Key),
 			Value: aws.String(l.Value),
 		})
 	}
 
 	for _, l := range a.fixedLabels {
-		res = append(res, &cloudwatch.Dimension{
+		res = append(res, types.Dimension{
 			Name:  aws.String(l.Key),
 			Value: aws.String(l.Value),
 		})
@@ -129,14 +130,14 @@ func (a *awsCloudWatchServer) publishMetrics(ctx context.Context) {
 				value = a.lastValues[metricId]
 			}
 
-			_, err := a.client.PutMetricDataWithContext(ctx, &cloudwatch.PutMetricDataInput{
+			_, err := a.client.PutMetricData(ctx, &cloudwatch.PutMetricDataInput{
 				Namespace: aws.String(a.namespace),
-				MetricData: []*cloudwatch.MetricDatum{
+				MetricData: []types.MetricDatum{
 					{
 						MetricName: aws.String(d.name),
 						Dimensions: a.dimensions(d.metricInfo),
 						Timestamp:  aws.Time(d.timestamp),
-						Unit:       aws.String(d.unit),
+						Unit:       types.StandardUnit(d.unit),
 						Value:      aws.Float64(value),
 					},
 				},
@@ -223,7 +224,7 @@ func (a *awsCloudWatchServer) exportMetrics(ctx context.Context) {
 		case now := <-ticker.C:
 			now = now.UTC().Truncate(time.Minute)
 
-			data := make([]*cloudwatch.MetricDatum, 0)
+			data := make([]types.MetricDatum, 0)
 
 			a.metricLock.Lock()
 			for metricId, info := range a.metrics {
@@ -237,13 +238,13 @@ func (a *awsCloudWatchServer) exportMetrics(ctx context.Context) {
 
 					counts, values := getCounts(observations)
 
-					data = append(data, &cloudwatch.MetricDatum{
+					data = append(data, types.MetricDatum{
 						Dimensions: a.dimensions(info),
 						MetricName: aws.String(info.name),
 						Timestamp:  aws.Time(now),
-						Unit:       aws.String(info.unit),
-						Values:     aws.Float64Slice(values),
-						Counts:     aws.Float64Slice(counts),
+						Unit:       types.StandardUnit(info.unit),
+						Values:     values,
+						Counts:     counts,
 					})
 
 					foundOneObservation = true
@@ -251,18 +252,18 @@ func (a *awsCloudWatchServer) exportMetrics(ctx context.Context) {
 				}
 
 				if value, ok := a.lastValues[metricId]; !foundOneObservation && ok {
-					data = append(data, &cloudwatch.MetricDatum{
+					data = append(data, types.MetricDatum{
 						Dimensions: a.dimensions(info),
 						MetricName: aws.String(info.name),
 						Timestamp:  aws.Time(now),
-						Unit:       aws.String(info.unit),
+						Unit:       types.StandardUnit(info.unit),
 						Value:      aws.Float64(value),
 					})
 				}
 			}
 			a.metricLock.Unlock()
 
-			_, err := a.client.PutMetricDataWithContext(ctx, &cloudwatch.PutMetricDataInput{
+			_, err := a.client.PutMetricData(ctx, &cloudwatch.PutMetricDataInput{
 				Namespace:  aws.String(a.namespace),
 				MetricData: data,
 			})

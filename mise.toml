@@ -1,5 +1,5 @@
 [tools]
-go = "1.22"
+go = "1.23"
 poetry = { version="2.1.4", pyproject="{{ config_root }}/pyproject.toml" }
 python = "3.10"
 
