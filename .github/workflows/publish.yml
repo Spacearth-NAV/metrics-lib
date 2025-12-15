@@ -1,0 +1,28 @@
+name: publish
+on:
+  push:
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+
+jobs:
+  build-tagged:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: actions/cache@v3
+        name: Setup poetry cache
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+      - name: Install dependencies
+        run: poetry install
+      - name: Set version
+        run: poetry version ${{ github.ref_name }}
+      - name: Build
+        run: poetry build
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1

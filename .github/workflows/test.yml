@@ -1,0 +1,40 @@
+name: test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: jdx/mise-action@v2
+    - uses: actions/cache@v3
+      name: Setup poetry cache
+      with:
+        path: ./.venv
+        key: venv-${{ hashFiles('poetry.lock') }}
+    - name: Install dependencies
+      run: |
+        poetry install
+        go mod download
+    - name: Lint code
+      run: |
+        poetry run pylint .
+        poetry run isort --check .
+        poetry run black --check .
+        test -z "$(gofmt -l .)"
+    - name: Check types
+      run: |
+        poetry run mypy .
+        go vet ./...
+    - name: Run unit tests
+      run: |
+        poetry run python -m unittest
+        go test ./...

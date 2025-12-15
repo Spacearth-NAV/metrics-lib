@@ -1,0 +1,66 @@
+[project]
+name = "spacearth-metrics"
+dynamic = ["version"]
+description = "Gather metrics from Python services using either AWS CloudWatch or Prometheus."
+authors = [
+    {name = "Michelle Laurenti",email = "michelle.laurenti@spacearthnav.it"}
+]
+readme = "README.md"
+license = {text = "Apache-2.0"}
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+keywords = ["metrics", "cloudwatch", "prometheus", "monitoring", "observability"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "boto3 (>=1.42.0,<2.0.0)",
+    "prometheus-python (>=1.0.3,<2.0.0)"
+]
+
+[project.urls]
+Homepage = "https://github.com/Spacearth-NAV/metrics-lib"
+Repository = "https://github.com/Spacearth-NAV/metrics-lib"
+Issues = "https://github.com/Spacearth-NAV/metrics-lib/issues"
+
+[tool.poetry]
+packages = [{include = "spacearth", from = "python"}]
+version = "0.0.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pylint = "^3.3.9"
+black = "^25.11.0"
+mypy = "^1.19.0"
+coverage = "^7.12.0"
+isort = "^6.1.0"
+boto3-stubs = {extras = ["cloudwatch"], version = "^1.42.0"}
+
+[tool.poetry.requires-plugins]
+poetry-plugin-export = ">=1.8"
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+skip = [".poetry", ".venv"]
+line_length = 120
+
+[tool.pylint.main]
+ignore = [".poetry", ".venv"]
+
+[tool.pylint.format]
+max-line-length = 120
+
