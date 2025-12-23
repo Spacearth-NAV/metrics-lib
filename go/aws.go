@@ -82,7 +82,7 @@ func newAmazonCloudwatchServer(namespace string, fixedLabels ...Label) (Server, 
 }
 
 func (a *awsCloudWatchServer) dimensions(m metricInfo) []*cloudwatch.Dimension {
-	res := make([]*cloudwatch.Dimension, len(m.labels)+len(a.fixedLabels))
+	res := make([]*cloudwatch.Dimension, 0, len(m.labels)+len(a.fixedLabels))
 
 	for _, l := range m.labels {
 		res = append(res, &cloudwatch.Dimension{
