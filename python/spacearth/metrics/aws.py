@@ -200,9 +200,12 @@ class AmazonCloudwatchMetricServer(MetricServer):
                         )
 
             try:
-                self.__client.put_metric_data(Namespace=self._namespace, MetricData=data_to_publish)  # type: ignore
+                if len(data_to_publish) > 0:
+                    self.__client.put_metric_data(Namespace=self._namespace, MetricData=data_to_publish)  # type: ignore
 
-                self.__logger.info("All metrics published up to %s", sleep_until)
+                    self.__logger.info("All metrics published up to %s", sleep_until)
+                else:
+                    self.__logger.info("No metrics to publish up to %s", sleep_until)
             except Exception:  # pylint: disable=broad-exception-caught
                 self.__logger.exception("Failed to publish metrics")
 

@@ -262,16 +262,21 @@ func (a *awsCloudWatchServer) exportMetrics(ctx context.Context) {
 			}
 			a.metricLock.Unlock()
 
-			_, err := a.client.PutMetricDataWithContext(ctx, &cloudwatch.PutMetricDataInput{
-				Namespace:  aws.String(a.namespace),
-				MetricData: data,
-			})
+			if len(data) > 0 {
+				_, err := a.client.PutMetricDataWithContext(ctx, &cloudwatch.PutMetricDataInput{
+					Namespace:  aws.String(a.namespace),
+					MetricData: data,
+				})
 
-			if err != nil {
-				logger.Error("failed to publish metric data", "error", err)
+				if err != nil {
+					logger.Error("failed to publish metric data", "error", err)
+				} else {
+					logger.Info(fmt.Sprintf("published all metrics up to %s", now))
+				}
 			} else {
-				logger.Info(fmt.Sprintf("published all metrics up to %s", now))
+				logger.Info(fmt.Sprintf("no metrics to publish up to %s", now))
 			}
+
 		case <-ctx.Done():
 			ticker.Stop()
 			return
