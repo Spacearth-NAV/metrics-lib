@@ -56,10 +56,12 @@ type awsCloudWatchServer struct {
 
 func newAmazonCloudwatchServer(namespace string, fixedLabels ...Label) (Server, error) {
 	res := &awsCloudWatchServer{
-		namespace:   namespace,
-		lastValues:  make(map[string]float64),
-		fixedLabels: fixedLabels,
-		data:        make(chan metricData),
+		namespace:    namespace,
+		lastValues:   make(map[string]float64),
+		metrics:      make(map[string]metricInfo),
+		observations: make(map[string]map[time.Time][]float64),
+		fixedLabels:  fixedLabels,
+		data:         make(chan metricData),
 	}
 
 	sess, err := session.NewSession()
