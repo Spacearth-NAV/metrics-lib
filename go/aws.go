@@ -59,6 +59,7 @@ func newAmazonCloudwatchServer(namespace string, fixedLabels ...Label) (Server, 
 		namespace:   namespace,
 		lastValues:  make(map[string]float64),
 		fixedLabels: fixedLabels,
+		data:        make(chan metricData),
 	}
 
 	sess, err := session.NewSession()
