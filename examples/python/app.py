@@ -62,8 +62,7 @@ def simulate():
     """Simulate a single request processing cycle with random metrics."""
     endpoint = random.choice(ENDPOINTS)
     record_observation("requests_received", 1, labels={"endpoint": endpoint, "method": "GET"})
-    record_observation("requests_received", 1, labels={"endpoint": "/ciccio", "method": "POST"})
-    #record_observation("requests_received", 1, labels={"endpoint": "/ciccio"})
+    
     # Measure processing time
     t_start = time.time()
     time.sleep(random.uniform(0.01, 0.2))
