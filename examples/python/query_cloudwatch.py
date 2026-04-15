@@ -51,7 +51,7 @@ def get_stats(client: BaseClient, metric_name: str):
             Period=60,
             Statistics=stats,
         )
-    except Exception:  # type: ignore[misc]
+    except Exception:  # pylint: disable=broad-exception-caught # type: ignore[misc]
         print(f"  Metric '{metric_name}' not found")
         return
 
