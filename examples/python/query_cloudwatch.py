@@ -11,9 +11,10 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 import boto3
+from botocore.client import BaseClient
 
 
-def get_client() -> boto3.client:
+def get_client() -> BaseClient:
     """Create a CloudWatch client pointing to the moto server."""
     return boto3.client(
         "cloudwatch",
@@ -22,10 +23,10 @@ def get_client() -> boto3.client:
     )
 
 
-def list_metrics(client: boto3.client):
+def list_metrics(client: BaseClient):
     """List all metrics in the myapp namespace."""
     print("\n=== Metrics in namespace 'myapp' ===\n")
-    resp = client.list_metrics(Namespace="myapp")
+    resp = client.list_metrics(Namespace="myapp")  # type: ignore[attr-defined]
     if not resp["Metrics"]:
         print("  (no metrics found)")
         return
@@ -34,7 +35,7 @@ def list_metrics(client: boto3.client):
         print(f"  {m['MetricName']:<25s} [{dims}]")
 
 
-def get_stats(client: boto3.client, metric_name: str):
+def get_stats(client: BaseClient, metric_name: str):
     """Get and display statistics for a specific metric."""
     print(f"\n=== Statistics for '{metric_name}' ===\n")
     end = datetime.now(timezone.utc)
@@ -42,7 +43,7 @@ def get_stats(client: boto3.client, metric_name: str):
 
     stats = ["Sum", "Average", "Maximum", "Minimum", "SampleCount"]
     try:
-        resp = client.get_metric_statistics(
+        resp = client.get_metric_statistics(  # type: ignore[attr-defined]
             Namespace="myapp",
             MetricName=metric_name,
             StartTime=start,
@@ -50,7 +51,7 @@ def get_stats(client: boto3.client, metric_name: str):
             Period=60,
             Statistics=stats,
         )
-    except client.exceptions.MetricNotFound:
+    except Exception:  # type: ignore[misc]
         print(f"  Metric '{metric_name}' not found")
         return
 
@@ -65,9 +66,9 @@ def get_stats(client: boto3.client, metric_name: str):
         print(f"  {ts}  {values}")
 
 
-def show_all(client: boto3.client):
+def show_all(client: BaseClient):
     """Show statistics for all metrics in the namespace."""
-    resp = client.list_metrics(Namespace="myapp")
+    resp = client.list_metrics(Namespace="myapp")  # type: ignore[attr-defined]
     names = sorted(set(m["MetricName"] for m in resp["Metrics"]))
     for name in names:
         get_stats(client, name)

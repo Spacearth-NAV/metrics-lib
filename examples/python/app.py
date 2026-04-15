@@ -12,11 +12,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # Create both metric servers — same interface, different backends
 prometheus_server = MetricServer.create_server("prometheus", "myapp", {"environment": "demo"})
 
+CLOUDWATCH_SERVER: MetricServer | None = None
 if os.environ.get("AWS_ENDPOINT_URL"):
     CLOUDWATCH_SERVER = MetricServer.create_server("aws", "myapp", {"environment": "demo"})
     logging.info("CloudWatch server enabled via moto")
 else:
-    CLOUDWATCH_SERVER = None
     logging.info("CloudWatch server disabled (set AWS_ENDPOINT_URL to enable)")
 
 ENDPOINTS = ["/login", "/api/users", "/api/orders", "/health"]
