@@ -1,3 +1,5 @@
+"""Demo application generating synthetic metrics for both Prometheus and CloudWatch backends."""
+
 import logging
 import os
 import random
@@ -11,10 +13,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 prometheus_server = MetricServer.create_server("prometheus", "myapp", {"environment": "demo"})
 
 if os.environ.get("AWS_ENDPOINT_URL"):
-    cloudwatch_server = MetricServer.create_server("aws", "myapp", {"environment": "demo"})
+    CLOUDWATCH_SERVER = MetricServer.create_server("aws", "myapp", {"environment": "demo"})
     logging.info("CloudWatch server enabled via moto")
 else:
-    cloudwatch_server = None
+    CLOUDWATCH_SERVER = None
     logging.info("CloudWatch server disabled (set AWS_ENDPOINT_URL to enable)")
 
 ENDPOINTS = ["/login", "/api/users", "/api/orders", "/health"]
@@ -22,37 +24,42 @@ STEPS = ["auth", "process", "serialize"]
 
 
 def record_observation(name, value, labels=None):
+    """Record a counter observation to all active backends."""
     prometheus_server.add_observation(name, value, labels=labels)
-    if cloudwatch_server:
-        cloudwatch_server.add_observation(name, value, labels=labels)
+    if CLOUDWATCH_SERVER:
+        CLOUDWATCH_SERVER.add_observation(name, value, labels=labels)
 
 
 def record_time(name, value, labels=None):
+    """Record a timing observation to all active backends."""
     prometheus_server.measure_time(name, value, labels=labels)
-    if cloudwatch_server:
-        cloudwatch_server.measure_time(name, value, labels=labels)
+    if CLOUDWATCH_SERVER:
+        CLOUDWATCH_SERVER.measure_time(name, value, labels=labels)
 
 
 def record_increment(name, value=1, labels=None):
+    """Increment a gauge on all active backends."""
     prometheus_server.increment_value(name, value, labels=labels)
-    if cloudwatch_server:
-        cloudwatch_server.increment_value(name, value, labels=labels)
+    if CLOUDWATCH_SERVER:
+        CLOUDWATCH_SERVER.increment_value(name, value, labels=labels)
 
 
 def record_decrement(name, value=1, labels=None):
+    """Decrement a gauge on all active backends."""
     prometheus_server.decrement_value(name, value, labels=labels)
-    if cloudwatch_server:
-        cloudwatch_server.decrement_value(name, value, labels=labels)
+    if CLOUDWATCH_SERVER:
+        CLOUDWATCH_SERVER.decrement_value(name, value, labels=labels)
 
 
 def record_set(name, value, labels=None):
+    """Set a gauge value on all active backends."""
     prometheus_server.set_value(name, value, labels=labels)
-    if cloudwatch_server:
-        cloudwatch_server.set_value(name, value, labels=labels)
+    if CLOUDWATCH_SERVER:
+        CLOUDWATCH_SERVER.set_value(name, value, labels=labels)
 
 
 def simulate():
-    # Simulate request processing
+    """Simulate a single request processing cycle with random metrics."""
     endpoint = random.choice(ENDPOINTS)
     record_observation("requests_received", 1, labels={"endpoint": endpoint, "method": "GET"})
     record_observation("requests_received", 1, labels={"endpoint": "/ciccio", "method": "POST"})
@@ -77,7 +84,7 @@ def simulate():
 if __name__ == "__main__":
     logging.info("Starting metrics demo...")
     logging.info("Prometheus:  http://localhost:8080/metrics")
-    if cloudwatch_server:
+    if CLOUDWATCH_SERVER:
         logging.info("CloudWatch:   moto at %s", os.environ["AWS_ENDPOINT_URL"])
     while True:
         simulate()

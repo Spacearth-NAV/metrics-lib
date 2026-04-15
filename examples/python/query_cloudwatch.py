@@ -14,6 +14,7 @@ import boto3
 
 
 def get_client() -> boto3.client:
+    """Create a CloudWatch client pointing to the moto server."""
     return boto3.client(
         "cloudwatch",
         endpoint_url=os.environ.get("AWS_ENDPOINT_URL", "http://localhost:5000"),
@@ -22,6 +23,7 @@ def get_client() -> boto3.client:
 
 
 def list_metrics(client: boto3.client):
+    """List all metrics in the myapp namespace."""
     print("\n=== Metrics in namespace 'myapp' ===\n")
     resp = client.list_metrics(Namespace="myapp")
     if not resp["Metrics"]:
@@ -33,6 +35,7 @@ def list_metrics(client: boto3.client):
 
 
 def get_stats(client: boto3.client, metric_name: str):
+    """Get and display statistics for a specific metric."""
     print(f"\n=== Statistics for '{metric_name}' ===\n")
     end = datetime.now(timezone.utc)
     start = end - timedelta(minutes=5)
@@ -52,7 +55,7 @@ def get_stats(client: boto3.client, metric_name: str):
         return
 
     if not resp["Datapoints"]:
-        print(f"  (no datapoints in the last 5 minutes)")
+        print("  (no datapoints in the last 5 minutes)")
         return
 
     # Sort by timestamp descending
@@ -63,6 +66,7 @@ def get_stats(client: boto3.client, metric_name: str):
 
 
 def show_all(client: boto3.client):
+    """Show statistics for all metrics in the namespace."""
     resp = client.list_metrics(Namespace="myapp")
     names = sorted(set(m["MetricName"] for m in resp["Metrics"]))
     for name in names:
@@ -70,6 +74,7 @@ def show_all(client: boto3.client):
 
 
 def main():
+    """CLI entry point for querying CloudWatch metrics."""
     client = get_client()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
 
