@@ -1,0 +1,154 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Requests Rate",
+      "description": "Richieste per secondo, per endpoint",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(myapp_requests_received_total[1m])",
+          "legendFormat": "{{endpoint}}"
+        },
+        {
+          "expr": "sum(rate(myapp_requests_received_total[1m]))",
+          "legendFormat": "total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "reqps",
+          "custom": { "fillOpacity": 30 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Processing Time (Latency)",
+      "description": "Percentili latenza per step",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(myapp_processing_time_bucket[5m]))",
+          "legendFormat": "p99"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(myapp_processing_time_bucket[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(myapp_processing_time_bucket[5m]))",
+          "legendFormat": "p50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "s",
+          "custom": { "fillOpacity": 10 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Avg Processing Time",
+      "description": "Latenza media per step",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(myapp_processing_time_sum[5m]) / rate(myapp_processing_time_count[5m])",
+          "legendFormat": "{{step}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Active Connections",
+      "description": "Connessioni attive per endpoint",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "myapp_active_connections",
+          "legendFormat": "{{endpoint}}"
+        },
+        {
+          "expr": "sum(myapp_active_connections)",
+          "legendFormat": "total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "none"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Current Users",
+      "description": "Valore corrente utenti",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "myapp_current_users",
+          "legendFormat": "users"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 80 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Users Trend",
+      "description": "Andamento utenti nell'ultimo minuto",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "deriv(myapp_current_users[1m])",
+          "legendFormat": "delta/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["myapp"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" }
+}
