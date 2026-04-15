@@ -1,7 +1,7 @@
 [tools]
 go = "1.22"
-poetry = { version="2.1.4", pyproject="{{ config_root }}/pyproject.toml" }
 python = "3.10"
+poetry = { version="2.1.4", pyproject="{{ config_root }}/pyproject.toml" }
 
 [env]
 _.file = '.env'
