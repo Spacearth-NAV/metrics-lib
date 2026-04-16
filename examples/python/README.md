@@ -107,7 +107,8 @@ All backends share the same interface — `add_observation`, `measure_time`, `in
 examples/python/
 ├── app.py                    # Demo application
 ├── query_cloudwatch.py       # Script to query CloudWatch metrics from moto
-├── Dockerfile                # App container (Python + prometheus-python + boto3)
+├── pyproject.toml            # Standalone poetry project (dependencies + lint config)
+├── Dockerfile                # App container (poetry + spacearth-metrics)
 ├── Dockerfile.moto           # Moto server container (CloudWatch mock)
 ├── docker-compose.yml        # Orchestrates all services
 ├── prometheus.yml            # Prometheus scrape configuration

@@ -34,6 +34,14 @@ jobs:
       run: |
         poetry run mypy .
         go vet ./...
+    - name: Lint example
+      working-directory: examples/python
+      run: |
+        poetry install
+        poetry run pylint *.py
+        poetry run isort --check *.py
+        poetry run black --check *.py
+        poetry run mypy *.py
     - name: Run unit tests
       run: |
         poetry run python -m unittest

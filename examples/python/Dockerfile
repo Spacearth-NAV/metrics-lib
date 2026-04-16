@@ -1,10 +1,14 @@
 FROM python:3.12-slim
 
-RUN pip install --no-cache-dir prometheus-python boto3
+# Install the metrics library (preserve repo structure for poetry build)
+WORKDIR /build
+COPY pyproject.toml README.md LICENSE ./
+COPY python/spacearth ./python/spacearth
+RUN pip install --no-cache-dir .
 
+# Install example dependencies and copy scripts
 WORKDIR /app
-COPY python/spacearth /usr/local/lib/python3.12/site-packages/spacearth
-COPY examples/python/app.py .
-COPY examples/python/query_cloudwatch.py .
+COPY examples/python/*.py ./
+RUN pip install --no-cache-dir prometheus-python boto3
 
 CMD ["python", "-u", "app.py"]
