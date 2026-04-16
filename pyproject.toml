@@ -63,3 +63,6 @@ ignore = [".poetry", ".venv"]
 
 [tool.pylint.format]
 max-line-length = 120
+
+[tool.mypy]
+exclude = ["examples"]
