@@ -34,7 +34,8 @@ import time
 
 from spacearth.metrics import MetricServer
 
-# create the server, add some fixed labels
+# create the server. The first param is the backend to use ["aws", "prometheus", "noop"], then add some fixed labels
+# When you use prometheus, you can also specify a port with a keyword argument [port=9090], default is 8080
 metric_server = MetricServer.create_server("aws", "custom", {"environment": "development"})
 
 # increment counters
