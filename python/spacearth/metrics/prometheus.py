@@ -39,13 +39,13 @@ class PrometheusMetricServer(MetricServer):
     # Subsequent calls with unregistered label keys are silently filtered out.
     __registered_labels: dict[str, list[str]]
 
-    def __init__(self, namespace: str, fixed_labels: dict[str, str]):
+    def __init__(self, namespace: str, fixed_labels: dict[str, str], *, port: int = 8080):
         super().__init__(namespace, fixed_labels)
         self.__counters: dict[str, Counter] = {}
         self.__histograms: dict[str, Histogram] = {}
         self.__gauges: dict[str, Gauge] = {}
         self.__registered_labels: dict[str, list[str]] = {}
-        start_http_server(8080)
+        start_http_server(port)
 
     def __get_label_names(self, name: str, labels: Optional[dict[str, str]]) -> list[str]:
         """Return the full list of label names for a metric (dynamic + fixed).
