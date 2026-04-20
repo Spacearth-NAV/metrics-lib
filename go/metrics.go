@@ -27,8 +27,9 @@ type Label struct {
 type ServerType string
 
 const (
-	AWS  ServerType = "aws"
-	NoOp ServerType = "noop"
+	AWS        ServerType = "aws"
+	Prometheus ServerType = "prometheus"
+	NoOp       ServerType = "noop"
 )
 
 type Server interface {
@@ -50,6 +51,16 @@ func NewServer(serverType ServerType, namespace string, fixedLabels ...Label) (S
 			return nil, err
 		} else {
 			logger.Info("created Amazon Cloudwatch metric server")
+			res = srv
+		}
+	case Prometheus:
+		port := prometheusPortFromEnv()
+		srv, err := newPrometheusServer(namespace, port, fixedLabels...)
+		if err != nil {
+			logger.Error("failed to create Prometheus metric server", "error", err)
+			return nil, err
+		} else {
+			logger.Info(fmt.Sprintf("created Prometheus metric server on port %d", port))
 			res = srv
 		}
 	case NoOp:
