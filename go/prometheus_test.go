@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -148,6 +149,85 @@ func TestPrometheusMetricCachedByName(t *testing.T) {
 
 	if testutil.CollectAndCount(p.counters["requests_received"]) != 2 {
 		t.Fatalf("expected two label sets on the shared counter")
+	}
+}
+
+func TestPrometheusLabelSetMismatchDoesNotPanic(t *testing.T) {
+	p := buildPrometheusServer("custom", []Label{{Key: "env", Value: "dev"}})
+
+	// First call registers the metric with keys {endpoint, env}.
+	p.AddObservation("requests_received", 1, Label{Key: "endpoint", Value: "/login"})
+
+	// Second call uses a different key set ({method, env}). Must not panic,
+	// the value must be dropped, and the original series must be untouched.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic on label-set mismatch: %v", r)
+		}
+	}()
+	p.AddObservation("requests_received", 42, Label{Key: "method", Value: "GET"})
+
+	// The cached counter should still have exactly one series with the
+	// original label set and its value should be 1 (not 43).
+	if got := testutil.CollectAndCount(p.counters["requests_received"]); got != 1 {
+		t.Fatalf("counter series count = %d, want 1", got)
+	}
+	if got := testutil.ToFloat64(p.counters["requests_received"].With(prometheus.Labels{"endpoint": "/login", "env": "dev"})); got != 1 {
+		t.Fatalf("counter value = %v, want 1 (mismatch call must have been dropped)", got)
+	}
+}
+
+func TestPrometheusLabelOrderIsInsensitive(t *testing.T) {
+	p := buildPrometheusServer("custom", nil)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic when swapping label order: %v", r)
+		}
+	}()
+
+	p.SetValue("queue_depth", 1, Label{Key: "queue", Value: "a"}, Label{Key: "region", Value: "eu"})
+	// Same key set, swapped order — must be accepted, not treated as mismatch.
+	p.SetValue("queue_depth", 7, Label{Key: "region", Value: "eu"}, Label{Key: "queue", Value: "a"})
+
+	got := testutil.ToFloat64(p.gauges["queue_depth"].With(prometheus.Labels{"queue": "a", "region": "eu"}))
+	if got != 7 {
+		t.Fatalf("gauge value = %v, want 7", got)
+	}
+}
+
+func TestPrometheusLabelSetMismatchAcrossAllMetricKinds(t *testing.T) {
+	p := buildPrometheusServer("custom", nil)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
+
+	// counter
+	p.AddObservation("c", 1, Label{Key: "a", Value: "1"})
+	p.AddObservation("c", 1, Label{Key: "b", Value: "2"}) // dropped
+	if got := testutil.CollectAndCount(p.counters["c"]); got != 1 {
+		t.Fatalf("counter series = %d, want 1", got)
+	}
+
+	// histogram
+	p.MeasureTime("h", time.Millisecond, Label{Key: "a", Value: "1"})
+	p.MeasureTime("h", time.Millisecond, Label{Key: "b", Value: "2"}) // dropped
+	if got := testutil.CollectAndCount(p.histograms["h"]); got != 1 {
+		t.Fatalf("histogram series = %d, want 1", got)
+	}
+
+	// gauge (set/inc/dec share the same vec via getGauge)
+	p.SetValue("g", 1, Label{Key: "a", Value: "1"})
+	p.SetValue("g", 99, Label{Key: "b", Value: "2"}) // dropped
+	p.IncrementValue("g", 5, Label{Key: "x", Value: "y"}) // dropped
+	if got := testutil.CollectAndCount(p.gauges["g"]); got != 1 {
+		t.Fatalf("gauge series = %d, want 1", got)
+	}
+	if got := testutil.ToFloat64(p.gauges["g"].With(prometheus.Labels{"a": "1"})); got != 1 {
+		t.Fatalf("gauge value = %v, want 1", got)
 	}
 }
 

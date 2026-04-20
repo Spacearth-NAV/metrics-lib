@@ -55,10 +55,11 @@ type prometheusServer struct {
 	fixedLabels []Label
 	registry    *prometheus.Registry
 
-	lock       sync.Mutex
-	counters   map[string]*prometheus.CounterVec
-	histograms map[string]*prometheus.HistogramVec
-	gauges     map[string]*prometheus.GaugeVec
+	lock         sync.Mutex
+	counters     map[string]*prometheus.CounterVec
+	histograms   map[string]*prometheus.HistogramVec
+	gauges       map[string]*prometheus.GaugeVec
+	metricLabels map[string]map[string]struct{}
 
 	server *http.Server
 }
@@ -97,13 +98,66 @@ func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (*pro
 // the registry directly without binding a port.
 func buildPrometheusServer(namespace string, fixedLabels []Label) *prometheusServer {
 	return &prometheusServer{
-		namespace:   namespace,
-		fixedLabels: fixedLabels,
-		registry:    prometheus.NewRegistry(),
-		counters:    make(map[string]*prometheus.CounterVec),
-		histograms:  make(map[string]*prometheus.HistogramVec),
-		gauges:      make(map[string]*prometheus.GaugeVec),
+		namespace:    namespace,
+		fixedLabels:  fixedLabels,
+		registry:     prometheus.NewRegistry(),
+		counters:     make(map[string]*prometheus.CounterVec),
+		histograms:   make(map[string]*prometheus.HistogramVec),
+		gauges:       make(map[string]*prometheus.GaugeVec),
+		metricLabels: make(map[string]map[string]struct{}),
 	}
+}
+
+// labelSet returns the combined set of label keys for a per-call labels slice
+// plus the server's fixed labels. Used for order-insensitive validation.
+func (p *prometheusServer) labelSet(labels []Label) map[string]struct{} {
+	res := make(map[string]struct{}, len(labels)+len(p.fixedLabels))
+	for _, l := range labels {
+		res[l.Key] = struct{}{}
+	}
+	for _, l := range p.fixedLabels {
+		res[l.Key] = struct{}{}
+	}
+	return res
+}
+
+// sameLabelSet reports whether two label-key sets contain exactly the same keys.
+func sameLabelSet(a, b map[string]struct{}) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// checkLabelSet verifies that the incoming label keys match the set registered
+// for `name` at first use. On mismatch it logs and returns false so the caller
+// can skip the operation instead of letting prometheus panic on an inconsistent
+// cardinality. Must be called with p.lock held; the metric is assumed to be
+// already registered (and therefore present in p.metricLabels).
+func (p *prometheusServer) checkLabelSet(name string, incoming map[string]struct{}) bool {
+	registered := p.metricLabels[name]
+	if sameLabelSet(registered, incoming) {
+		return true
+	}
+	logger.Error("label set mismatch for metric; dropping value to avoid panic",
+		"name", name,
+		"registered", setKeys(registered),
+		"got", setKeys(incoming),
+	)
+	return false
+}
+
+func setKeys(s map[string]struct{}) []string {
+	keys := make([]string, 0, len(s))
+	for k := range s {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func (p *prometheusServer) labelNames(labels []Label) []string {
@@ -132,7 +186,12 @@ func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.C
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	incoming := p.labelSet(labels)
+
 	if c, ok := p.counters[name]; ok {
+		if !p.checkLabelSet(name, incoming) {
+			return nil
+		}
 		return c
 	}
 
@@ -146,6 +205,7 @@ func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.C
 	}
 
 	p.counters[name] = c
+	p.metricLabels[name] = incoming
 	return c
 }
 
@@ -153,7 +213,12 @@ func (p *prometheusServer) getHistogram(name string, labels []Label) *prometheus
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	incoming := p.labelSet(labels)
+
 	if h, ok := p.histograms[name]; ok {
+		if !p.checkLabelSet(name, incoming) {
+			return nil
+		}
 		return h
 	}
 
@@ -167,6 +232,7 @@ func (p *prometheusServer) getHistogram(name string, labels []Label) *prometheus
 	}
 
 	p.histograms[name] = h
+	p.metricLabels[name] = incoming
 	return h
 }
 
@@ -174,7 +240,12 @@ func (p *prometheusServer) getGauge(name string, labels []Label) *prometheus.Gau
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	incoming := p.labelSet(labels)
+
 	if g, ok := p.gauges[name]; ok {
+		if !p.checkLabelSet(name, incoming) {
+			return nil
+		}
 		return g
 	}
 
@@ -188,6 +259,7 @@ func (p *prometheusServer) getGauge(name string, labels []Label) *prometheus.Gau
 	}
 
 	p.gauges[name] = g
+	p.metricLabels[name] = incoming
 	return g
 }
 
