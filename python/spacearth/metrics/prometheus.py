@@ -48,7 +48,10 @@ class PrometheusMetricServer(MetricServer):
         except KeyError:
             counter = Counter(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__counters[name] = counter
-        counter.labels(**{**(labels or {}), **self._fixed_labels}).inc(value)
+        if labels is not None:
+            counter = counter.labels(**labels)
+        counter = counter.labels(**self._fixed_labels)
+        counter.inc(value)
 
     def measure_time(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         try:
@@ -56,7 +59,10 @@ class PrometheusMetricServer(MetricServer):
         except KeyError:
             histogram = Histogram(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__histograms[name] = histogram
-        histogram.labels(**{**(labels or {}), **self._fixed_labels}).observe(value)
+        if labels is not None:
+            histogram = histogram.labels(**labels)
+        histogram = histogram.labels(**self._fixed_labels)
+        histogram.observe(value)
 
     def increment_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         try:
@@ -64,7 +70,10 @@ class PrometheusMetricServer(MetricServer):
         except KeyError:
             gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__gauges[name] = gauge
-        gauge.labels(**{**(labels or {}), **self._fixed_labels}).inc(value)
+        if labels is not None:
+            gauge = gauge.labels(**labels)
+        gauge = gauge.labels(**self._fixed_labels)
+        gauge.inc(value)
 
     def decrement_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         try:
@@ -72,7 +81,10 @@ class PrometheusMetricServer(MetricServer):
         except KeyError:
             gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__gauges[name] = gauge
-        gauge.labels(**{**(labels or {}), **self._fixed_labels}).dec(value)
+        if labels is not None:
+            gauge = gauge.labels(**labels)
+        gauge = gauge.labels(**self._fixed_labels)
+        gauge.dec(value)
 
     def set_value(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         try:
@@ -80,4 +92,7 @@ class PrometheusMetricServer(MetricServer):
         except KeyError:
             gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__gauges[name] = gauge
-        gauge.labels(**{**(labels or {}), **self._fixed_labels}).set(value)
+        if labels is not None:
+            gauge = gauge.labels(**labels)
+        gauge = gauge.labels(**self._fixed_labels)
+        gauge.set(value)
