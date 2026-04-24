@@ -1,25 +1,17 @@
 # Metrics library
 
 This repo contains a metrics library implemented in Go and Python.
-The goal of the metric library is to be transparent inside the deployment if metrics are disabled.
-
-When using the Amazon CloudWatch metric server, configure the following environment variables:
-
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_DEFAULT_REGION`
-
-Refer to the [AWS SDK configuration documentation](https://docs.aws.amazon.com/sdkref/latest/guide/environment-variables.html) for more info.
+The goal of the library is to be transparent inside the deployment: if metrics are disabled, the application code does not change.
 
 ## Installation
 
-For python:
+### Python
 
 ```bash
 pip install spacearth-metrics
 ```
 
-For go:
+### Go
 
 ```bash
 go get github.com/Spacearth-NAV/metrics-lib
@@ -27,82 +19,112 @@ go get github.com/Spacearth-NAV/metrics-lib
 
 ## Usage
 
-For the python library:
+### Initialization
+
+#### AWS
+
+Set the following environment variables before starting your application:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_DEFAULT_REGION`
+
+Refer to the [AWS SDK configuration documentation](https://docs.aws.amazon.com/sdkref/latest/guide/environment-variables.html) for more info.
+
+**Python**
+
+```python
+from spacearth.metrics import MetricServer
+
+metric_server = MetricServer.create_server("aws", "my_namespace", {"environment": "production"})
+```
+
+**Go**
+
+```go
+metricsServer, err = metrics.NewServer(metrics.AWS, "my_namespace", metrics.Label{"environment", "production"})
+```
+
+#### Prometheus
+
+The Prometheus backend starts an HTTP server that exposes metrics at `/metrics`. The port defaults to `8080` and can be changed via the `port` keyword argument.
+
+> **Note:** Prometheus requires all label names for a metric to be declared upfront. The label schema is locked on the first call for each metric name. Any subsequent call with a different set of label keys will raise an error from the underlying `prometheus_client` library. Make sure to use the same label keys consistently across all calls to the same metric.
+
+**Python**
+
+```python
+from spacearth.metrics import MetricServer
+
+# default port 8080
+metric_server = MetricServer.create_server("prometheus", "my_namespace", {"environment": "production"})
+
+# custom port
+metric_server = MetricServer.create_server("prometheus", "my_namespace", {"environment": "production"}, port=9090)
+```
+
+**Go**
+
+Go support for the Prometheus backend is tracked in a separate PR.
+
+#### No-op
+
+When metrics are disabled (e.g. in local development), use the `noop` backend. All calls are silently ignored.
+
+```python
+metric_server = MetricServer.create_server("noop", "my_namespace", {})
+```
+
+---
+
+### Recording metrics
+
+All backends share the same interface. Fixed labels passed at initialization are automatically added to every metric.
+
+#### Counters — `add_observation`
+
+Records a single event count.
+
+```python
+metric_server.add_observation("requests_received", 1, labels={"endpoint": "/login"})
+```
+
+#### Histograms — `measure_time`
+
+Records a duration in seconds.
 
 ```python
 import time
 
-from spacearth.metrics import MetricServer
-
-# create the server. The first param is the backend to use ["aws", "prometheus", "noop"], then add some fixed labels
-# When you use prometheus, you can also specify a port with a keyword argument [port=9090], default is 8080
-metric_server = MetricServer.create_server("aws", "custom", {"environment": "development"})
-
-# increment counters
-metric_server.add_observation("requests_received", 1, labels={"endpoint": "/login"})
-
-# measure times
 t_start = time.time()
-# do something
-t_end = time.time()
-metric_server.measure_time("processing_time", t_end - t_start, labels={"step": "something"})
-
-
-# keep track of resources
-def on_connection(conn):
-    metric_server.increment_value("connections")
-    try:
-        while conn.connected:
-            # handle connection
-            pass
-    finally:
-        metric_server.decrement_value("connections")
+# ... do work ...
+metric_server.measure_time("processing_time", time.time() - t_start, labels={"step": "auth"})
 ```
 
-For the go library:
+#### Gauges — `increment_value`, `decrement_value`, `set_value`
+
+Tracks a value that goes up and down.
+
+```python
+def on_connection(conn):
+    metric_server.increment_value("active_connections", labels={"endpoint": "/ws"})
+    try:
+        while conn.connected:
+            pass
+    finally:
+        metric_server.decrement_value("active_connections", labels={"endpoint": "/ws"})
+
+# or set an absolute value
+metric_server.set_value("queue_depth", 42)
+```
+
+**Go**
 
 ```go
-package main
+metricsServer.AddObservation("requests_received", 1, metrics.Label{"endpoint", "/login"})
 
-import (
-	"log/slog"
-	"net/http"
-	"time"
+metricsServer.MeasureTime("processing_time", time.Since(start), metrics.Label{"step", "auth"})
 
-	"github.com/Spacearth-NAV/metrics-lib/go"
-)
-
-var metricsServer metrics.Server
-
-func main() {
-	// you can specify a logger: the interface is compatible with the slog package
-	metrics.SetLogger(slog.Default())
-	// instantiate the metric server
-	var err error
-	metricsServer, err = metrics.NewServer(metrics.AWS, "custom", metrics.Label{"environment", "development"})
-	if err != nil {
-		panic(err)
-    }
-
-	http.HandleFunc("GET /info", connectionCallback)
-}
-
-func connectionCallback(w http.ResponseWriter, r *http.Request) {
-	// count active connections
-	metricsServer.IncrementValue("active_connections", 1, metrics.Label{"endpoint", "info"})
-	defer metricsServer.DecrementValue("active_connections", 1, metrics.Label{"endpoint", "info"})
-
-	// count requests
-	metricsServer.AddObservation("received_requests", 1, metrics.Label{"endpoint", "info"})
-
-	// measure time
-	start := time.Now()
-
-	/* do something */
-
-	end := time.Now()
-	metricsServer.MeasureTime("processing_time", end.Sub(start), metrics.Label{"endpoint", "info"})
-
-	w.WriteHeader(http.StatusOK)
-}
+metricsServer.IncrementValue("active_connections", 1, metrics.Label{"endpoint", "/ws"})
+metricsServer.DecrementValue("active_connections", 1, metrics.Label{"endpoint", "/ws"})
 ```
