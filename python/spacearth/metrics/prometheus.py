@@ -28,79 +28,56 @@ class PrometheusMetricServer(MetricServer):
     Exposes metrics via a prometheus server.
     """
 
-    # Prometheus Collectors keyed by metric name.
     __counters: dict[str, Counter]
     __histograms: dict[str, Histogram]
     __gauges: dict[str, Gauge]
-
-    # Tracks the dynamic label keys registered for each metric.
-    # Prometheus requires all label names to be declared at Collector creation time,
-    # so we lock in the label schema on the first call for each metric name.
-    # Subsequent calls with unregistered label keys are silently filtered out.
-    __registered_labels: dict[str, list[str]]
 
     def __init__(self, namespace: str, fixed_labels: dict[str, str], *, port: int = 8080):
         super().__init__(namespace, fixed_labels)
         self.__counters: dict[str, Counter] = {}
         self.__histograms: dict[str, Histogram] = {}
         self.__gauges: dict[str, Gauge] = {}
-        self.__registered_labels: dict[str, list[str]] = {}
         start_http_server(port)
 
-    def __get_label_names(self, name: str, labels: Optional[dict[str, str]]) -> list[str]:
-        """Return the full list of label names for a metric (dynamic + fixed).
-        On the first call for a given metric name, the dynamic label keys are
-        captured and stored. Subsequent calls reuse the same label schema.
-        """
-        if name not in self.__registered_labels:
-            self.__registered_labels[name] = sorted((labels or {}).keys())
-        return [*self.__registered_labels[name], *self._fixed_labels]
-
-    def __active_labels(self, name: str, labels: Optional[dict[str, str]]) -> dict[str, str]:
-        """Merge dynamic labels (filtered to registered keys) with fixed labels.
-        Applying all labels in a single ``.labels()`` call ensures a consistent
-        label tuple order across all recordings of the same metric.
-        """
-        registered = self.__registered_labels.get(name, [])
-        dynamic = {k: v for k, v in (labels or {}).items() if k in registered}
-        return {**dynamic, **self._fixed_labels}
+    def __label_names(self, labels: Optional[dict[str, str]]):
+        return [*(labels.keys() if labels is not None else []), *self._fixed_labels]
 
     def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
         try:
             counter = self.__counters[name]
         except KeyError:
-            counter = Counter(name, "", self.__get_label_names(name, labels), namespace=self._namespace)
+            counter = Counter(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__counters[name] = counter
-        counter.labels(**self.__active_labels(name, labels)).inc(value)
+        counter.labels(**{**(labels or {}), **self._fixed_labels}).inc(value)
 
     def measure_time(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         try:
             histogram = self.__histograms[name]
         except KeyError:
-            histogram = Histogram(name, "", self.__get_label_names(name, labels), namespace=self._namespace)
+            histogram = Histogram(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__histograms[name] = histogram
-        histogram.labels(**self.__active_labels(name, labels)).observe(value)
+        histogram.labels(**{**(labels or {}), **self._fixed_labels}).observe(value)
 
     def increment_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         try:
             gauge = self.__gauges[name]
         except KeyError:
-            gauge = Gauge(name, "", self.__get_label_names(name, labels), namespace=self._namespace)
+            gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__gauges[name] = gauge
-        gauge.labels(**self.__active_labels(name, labels)).inc(value)
+        gauge.labels(**{**(labels or {}), **self._fixed_labels}).inc(value)
 
     def decrement_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         try:
             gauge = self.__gauges[name]
         except KeyError:
-            gauge = Gauge(name, "", self.__get_label_names(name, labels), namespace=self._namespace)
+            gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__gauges[name] = gauge
-        gauge.labels(**self.__active_labels(name, labels)).dec(value)
+        gauge.labels(**{**(labels or {}), **self._fixed_labels}).dec(value)
 
     def set_value(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         try:
             gauge = self.__gauges[name]
         except KeyError:
-            gauge = Gauge(name, "", self.__get_label_names(name, labels), namespace=self._namespace)
+            gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
             self.__gauges[name] = gauge
-        gauge.labels(**self.__active_labels(name, labels)).set(value)
+        gauge.labels(**{**(labels or {}), **self._fixed_labels}).set(value)
