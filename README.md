@@ -43,13 +43,19 @@ metric_server = MetricServer.create_server("aws", "my_namespace", {"environment"
 
 ```go
 metricsServer, err := metrics.NewServer(metrics.AWS, "my_namespace", metrics.Label{"environment", "production"})
+if err != nil {
+    // handle error
+}
 ```
 
 #### Prometheus
 
-The Prometheus backend starts an HTTP server that exposes metrics at `/metrics`. The port defaults to `8080` and can be changed via the `port` keyword argument.
+The Prometheus backend starts an HTTP server that exposes metrics at `/metrics`.
 
-> **Note:** Prometheus requires all label names for a metric to be declared upfront. The label schema is locked on the first call for each metric name. Any subsequent call with a different set of label keys will raise an error from the underlying `prometheus_client` library. Make sure to use the same label keys consistently across all calls to the same metric.
+- **Python**: port defaults to `8080` and can be changed via the `port` keyword argument.
+- **Go**: port is read from the `METRICS_PROMETHEUS_PORT` environment variable (default `8080`).
+
+> **Note:** Prometheus requires all label names for a metric to be declared upfront. The label schema is locked on the first call for each metric name. Any subsequent call with a different set of label keys will raise an error. Make sure to use the same label keys consistently across all calls to the same metric.
 
 **Python**
 
@@ -65,14 +71,28 @@ metric_server = MetricServer.create_server("prometheus", "my_namespace", {"envir
 
 **Go**
 
-Go support for the Prometheus backend will be implemented later.
+```go
+// port is read from METRICS_PROMETHEUS_PORT environment variable (default 8080)
+metricsServer, err := metrics.NewServer(metrics.Prometheus, "my_namespace", metrics.Label{"environment", "production"})
+if err != nil {
+    // handle error
+}
+```
 
 #### No-op
 
 When metrics are disabled (e.g. in local development), use the `noop` backend. All calls are silently ignored.
 
+**Python**
+
 ```python
 metric_server = MetricServer.create_server("noop", "my_namespace", {})
+```
+
+**Go**
+
+```go
+metricsServer, err := metrics.NewServer(metrics.NoOp, "my_namespace")
 ```
 
 ---
@@ -81,17 +101,27 @@ metric_server = MetricServer.create_server("noop", "my_namespace", {})
 
 All backends share the same interface. Fixed labels passed at initialization are automatically added to every metric.
 
-#### Counters — `add_observation`
+#### Counters — `add_observation` / `AddObservation`
 
 Records a single event count.
+
+**Python**
 
 ```python
 metric_server.add_observation("requests_received", 1, labels={"endpoint": "/login"})
 ```
 
-#### Histograms — `measure_time`
+**Go**
 
-Records a duration in seconds.
+```go
+metricsServer.AddObservation("requests_received", 1, metrics.Label{"endpoint", "/login"})
+```
+
+#### Histograms — `measure_time` / `MeasureTime`
+
+Records a duration. Python accepts seconds as a `float`; Go accepts a `time.Duration`.
+
+**Python**
 
 ```python
 import time
@@ -101,9 +131,19 @@ t_start = time.time()
 metric_server.measure_time("processing_time", time.time() - t_start, labels={"step": "auth"})
 ```
 
-#### Gauges — `increment_value`, `decrement_value`, `set_value`
+**Go**
+
+```go
+start := time.Now()
+// ... do work ...
+metricsServer.MeasureTime("processing_time", time.Since(start), metrics.Label{"step", "auth"})
+```
+
+#### Gauges — `increment_value` / `decrement_value` / `set_value`
 
 Tracks a value that goes up and down.
+
+**Python**
 
 ```python
 def on_connection(conn):
@@ -121,10 +161,8 @@ metric_server.set_value("queue_depth", 42)
 **Go**
 
 ```go
-metricsServer.AddObservation("requests_received", 1, metrics.Label{"endpoint", "/login"})
-
-metricsServer.MeasureTime("processing_time", time.Since(start), metrics.Label{"step", "auth"})
-
 metricsServer.IncrementValue("active_connections", 1, metrics.Label{"endpoint", "/ws"})
 metricsServer.DecrementValue("active_connections", 1, metrics.Label{"endpoint", "/ws"})
+
+metricsServer.SetValue("queue_depth", 42)
 ```
