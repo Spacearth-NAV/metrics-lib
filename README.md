@@ -42,7 +42,7 @@ metric_server = MetricServer.create_server("aws", "my_namespace", {"environment"
 **Go**
 
 ```go
-metricsServer, err = metrics.NewServer(metrics.AWS, "my_namespace", metrics.Label{"environment", "production"})
+metricsServer, err := metrics.NewServer(metrics.AWS, "my_namespace", metrics.Label{"environment", "production"})
 ```
 
 #### Prometheus
@@ -65,7 +65,7 @@ metric_server = MetricServer.create_server("prometheus", "my_namespace", {"envir
 
 **Go**
 
-Go support for the Prometheus backend is tracked in a separate PR.
+Go support for the Prometheus backend will be implemented later.
 
 #### No-op
 
