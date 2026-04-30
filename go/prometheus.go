@@ -101,7 +101,7 @@ func (p *prometheusServer) labelValues(labels []Label) prometheus.Labels {
 // A write lock is acquired only when registration is needed, with a
 // double-check to handle the race between releasing the read lock and
 // acquiring the write lock.
-func getOrCreate[T any](lock *sync.RWMutex, cache map[string]*T, name string, create func() (*T, error)) *T {
+func getOrCreate[T any](lock *sync.RWMutex, cache map[string]*T, name string, create func() *T) *T {
 	lock.RLock()
 	if v, ok := cache[name]; ok {
 		lock.RUnlock()
@@ -116,92 +116,60 @@ func getOrCreate[T any](lock *sync.RWMutex, cache map[string]*T, name string, cr
 		return v
 	}
 
-	v, err := create()
-	if err != nil {
-		return nil
-	}
+	v := create()
 	cache[name] = v
 	return v
 }
 
 func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.CounterVec {
-	return getOrCreate(&p.lock, p.counters, name, func() (*prometheus.CounterVec, error) {
+	return getOrCreate(&p.lock, p.counters, name, func() *prometheus.CounterVec {
 		c := prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: p.namespace,
 			Name:      name,
 		}, p.labelNames(labels))
-		if err := p.registry.Register(c); err != nil {
-			logger.Error("failed to register prometheus counter", "name", name, "error", err)
-			return nil, err
-		}
-		return c, nil
+		p.registry.MustRegister(c)
+		return c
 	})
 }
 
 func (p *prometheusServer) getHistogram(name string, labels []Label) *prometheus.HistogramVec {
-	return getOrCreate(&p.lock, p.histograms, name, func() (*prometheus.HistogramVec, error) {
+	return getOrCreate(&p.lock, p.histograms, name, func() *prometheus.HistogramVec {
 		h := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: p.namespace,
 			Name:      name,
 		}, p.labelNames(labels))
-		if err := p.registry.Register(h); err != nil {
-			logger.Error("failed to register prometheus histogram", "name", name, "error", err)
-			return nil, err
-		}
-		return h, nil
+		p.registry.MustRegister(h)
+		return h
 	})
 }
 
 func (p *prometheusServer) getGauge(name string, labels []Label) *prometheus.GaugeVec {
-	return getOrCreate(&p.lock, p.gauges, name, func() (*prometheus.GaugeVec, error) {
+	return getOrCreate(&p.lock, p.gauges, name, func() *prometheus.GaugeVec {
 		g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: p.namespace,
 			Name:      name,
 		}, p.labelNames(labels))
-		if err := p.registry.Register(g); err != nil {
-			logger.Error("failed to register prometheus gauge", "name", name, "error", err)
-			return nil, err
-		}
-		return g, nil
+		p.registry.MustRegister(g)
+		return g
 	})
 }
 
 func (p *prometheusServer) AddObservation(name string, value float64, labels ...Label) {
-	c := p.getCounter(name, labels)
-	if c == nil {
-		return
-	}
-	c.With(p.labelValues(labels)).Add(value)
+	p.getCounter(name, labels).With(p.labelValues(labels)).Add(value)
 }
 
 func (p *prometheusServer) MeasureTime(name string, value time.Duration, labels ...Label) {
-	h := p.getHistogram(name, labels)
-	if h == nil {
-		return
-	}
-	h.With(p.labelValues(labels)).Observe(value.Seconds())
+	p.getHistogram(name, labels).With(p.labelValues(labels)).Observe(value.Seconds())
 }
 
 func (p *prometheusServer) IncrementValue(name string, value float64, labels ...Label) {
-	g := p.getGauge(name, labels)
-	if g == nil {
-		return
-	}
-	g.With(p.labelValues(labels)).Add(value)
+	p.getGauge(name, labels).With(p.labelValues(labels)).Add(value)
 }
 
 func (p *prometheusServer) DecrementValue(name string, value float64, labels ...Label) {
-	g := p.getGauge(name, labels)
-	if g == nil {
-		return
-	}
-	g.With(p.labelValues(labels)).Sub(value)
+	p.getGauge(name, labels).With(p.labelValues(labels)).Sub(value)
 }
 
 func (p *prometheusServer) SetValue(name string, value float64, labels ...Label) {
-	g := p.getGauge(name, labels)
-	if g == nil {
-		return
-	}
-	g.With(p.labelValues(labels)).Set(value)
+	p.getGauge(name, labels).With(p.labelValues(labels)).Set(value)
 }
