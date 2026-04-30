@@ -40,29 +40,51 @@ type Server interface {
 	SetValue(name string, value float64, labels ...Label)
 }
 
-func NewServer(serverType ServerType, namespace string, fixedLabels ...Label) (Server, error) {
+// Option configures the server created by NewServer.
+type Option func(*serverConfig)
+
+type serverConfig struct {
+	fixedLabels []Label
+	port        int
+}
+
+// WithFixedLabels adds labels that are attached to every metric regardless of backend.
+func WithFixedLabels(labels ...Label) Option {
+	return func(c *serverConfig) {
+		c.fixedLabels = append(c.fixedLabels, labels...)
+	}
+}
+
+// WithPort sets the TCP port for backends that expose an HTTP server (Prometheus).
+// Required when using NewServer with the Prometheus backend.
+func WithPort(port int) Option {
+	return func(c *serverConfig) { c.port = port }
+}
+
+func NewServer(serverType ServerType, namespace string, opts ...Option) (Server, error) {
+	cfg := &serverConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	var res Server = &noOpServer{}
 
 	switch serverType {
 	case AWS:
-		srv, err := newAmazonCloudwatchServer(namespace, fixedLabels...)
+		srv, err := newAmazonCloudwatchServer(namespace, cfg.fixedLabels...)
 		if err != nil {
 			logger.Error("failed to create Amazon Cloudwatch metric server", "error", err)
 			return nil, err
-		} else {
-			logger.Info("created Amazon Cloudwatch metric server")
-			res = srv
 		}
+		logger.Info("created Amazon Cloudwatch metric server")
+		res = srv
 	case Prometheus:
-		port := prometheusPortFromEnv()
-		srv, err := newPrometheusServer(namespace, port, fixedLabels...)
+		srv, err := NewPrometheusServer(namespace, cfg.port, cfg.fixedLabels...)
 		if err != nil {
 			logger.Error("failed to create Prometheus metric server", "error", err)
 			return nil, err
-		} else {
-			logger.Info(fmt.Sprintf("created Prometheus metric server on port %d", port))
-			res = srv
 		}
+		res = srv
 	case NoOp:
 		logger.Info("created placeholder (No-Op) metric server: no metrics will be published")
 	default:

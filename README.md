@@ -19,7 +19,9 @@ go get github.com/Spacearth-NAV/metrics-lib
 
 ## Usage
 
-### Initialization
+### Configuration
+
+Each backend requires specific configuration before the server is initialized.
 
 #### AWS
 
@@ -31,68 +33,86 @@ Set the following environment variables before starting your application:
 
 Refer to the [AWS SDK configuration documentation](https://docs.aws.amazon.com/sdkref/latest/guide/environment-variables.html) for more info.
 
-**Python**
-
-```python
-from spacearth.metrics import MetricServer
-
-metric_server = MetricServer.create_server("aws", "my_namespace", {"environment": "production"})
-```
-
-**Go**
-
-```go
-metricsServer, err := metrics.NewServer(metrics.AWS, "my_namespace", metrics.Label{"environment", "production"})
-if err != nil {
-    // handle error
-}
-```
-
 #### Prometheus
 
 The Prometheus backend starts an HTTP server that exposes metrics at `/metrics`.
 
-- **Python**: port defaults to `8080` and can be changed via the `port` keyword argument.
-- **Go**: port is read from the `METRICS_PROMETHEUS_PORT` environment variable (default `8080`).
+- **Python**: port is set via the `port` keyword argument (default `8080`).
+- **Go**: port is required and must be set explicitly via `WithPort`.
 
 > **Note:** Prometheus requires all label names for a metric to be declared upfront. The label schema is locked on the first call for each metric name. Any subsequent call with a different set of label keys will raise an error. Make sure to use the same label keys consistently across all calls to the same metric.
 
+#### No-op
+
+No configuration required. All calls are silently ignored.
+
+---
+
+### Initialization
+
+The library is designed to be transparent: initialization is the only place where the backend is chosen. All metric recording calls are identical regardless of the backend in use.
+
 **Python**
 
 ```python
+import os
 from spacearth.metrics import MetricServer
 
-# default port 8080
-metric_server = MetricServer.create_server("prometheus", "my_namespace", {"environment": "production"})
+provider    = os.getenv("METRIC_PROVIDER", "aws")
+namespace   = os.getenv("METRIC_NAMESPACE", "default")
+environment = os.getenv("ENVIRONMENT", "development")
 
-# custom port
-metric_server = MetricServer.create_server("prometheus", "my_namespace", {"environment": "production"}, port=9090)
+labels     = {"environment": environment}
+extra_args = {}
+
+# Prometheus requires a port
+if provider == "prometheus":
+    extra_args["port"] = int(os.getenv("PROMETHEUS_PORT", "8080"))
+
+metric_server = MetricServer.create_server(provider, namespace, labels, **extra_args)
+# AWS:        set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
+# Prometheus: set PROMETHEUS_PORT (default: 8080)
+# No-op:      no configuration required
 ```
 
 **Go**
 
 ```go
-// port is read from METRICS_PROMETHEUS_PORT environment variable (default 8080)
-metricsServer, err := metrics.NewServer(metrics.Prometheus, "my_namespace", metrics.Label{"environment", "production"})
+import (
+    "os"
+    "strconv"
+
+    metrics "github.com/Spacearth-NAV/metrics-lib/go"
+)
+
+func envOr(key, fallback string) string {
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return fallback
+}
+
+provider    := envOr("METRIC_PROVIDER", "aws")
+namespace   := envOr("METRIC_NAMESPACE", "default")
+environment := envOr("ENVIRONMENT", "development")
+
+opts := []metrics.Option{
+    metrics.WithFixedLabels(metrics.Label{"environment", environment}),
+}
+
+// Prometheus requires a port
+if provider == "prometheus" {
+    port, _ := strconv.Atoi(envOr("PROMETHEUS_PORT", "8080"))
+    opts = append(opts, metrics.WithPort(port))
+}
+
+metricsServer, err := metrics.NewServer(metrics.ServerType(provider), namespace, opts...)
 if err != nil {
     // handle error
 }
-```
-
-#### No-op
-
-When metrics are disabled (e.g. in local development), use the `noop` backend. All calls are silently ignored.
-
-**Python**
-
-```python
-metric_server = MetricServer.create_server("noop", "my_namespace", {})
-```
-
-**Go**
-
-```go
-metricsServer, err := metrics.NewServer(metrics.NoOp, "my_namespace")
+// AWS:        set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
+// Prometheus: set PROMETHEUS_PORT (default: 8080)
+// No-op:      no configuration required
 ```
 
 ---

@@ -18,37 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-
-const (
-	defaultPrometheusPort = 8080
-	prometheusPortEnvVar  = "METRICS_PROMETHEUS_PORT"
-)
-
-// prometheusPortFromEnv returns the TCP port the Prometheus HTTP server should
-// bind to. It reads the METRICS_PROMETHEUS_PORT environment variable and falls
-// back to defaultPrometheusPort if the variable is unset, empty, or not a
-// valid port number.
-func prometheusPortFromEnv() int {
-	raw, ok := os.LookupEnv(prometheusPortEnvVar)
-	if !ok || raw == "" {
-		return defaultPrometheusPort
-	}
-
-	port, err := strconv.Atoi(raw)
-	if err != nil || port < 1 || port > 65535 {
-		logger.Warn(fmt.Sprintf("invalid %s=%q, falling back to default port %d", prometheusPortEnvVar, raw, defaultPrometheusPort))
-		return defaultPrometheusPort
-	}
-	return port
-}
 
 type prometheusServer struct {
 	namespace   string
@@ -63,18 +38,16 @@ type prometheusServer struct {
 	server *http.Server
 }
 
-// NewPrometheusServer creates a metric server that exposes metrics in the
-// Prometheus text format under the "/metrics" path. The TCP port is read from
-// the METRICS_PROMETHEUS_PORT environment variable and defaults to 8080 when
-// the variable is unset or invalid. The server uses a dedicated
-// prometheus.Registry, so the exposition only contains metrics produced
-// through this Server instance.
-func NewPrometheusServer(namespace string, fixedLabels ...Label) (Server, error) {
-	return newPrometheusServer(namespace, prometheusPortFromEnv(), fixedLabels...)
-}
+// NewPrometheusServer creates a Prometheus metric server that exposes metrics
+// at /metrics on the given port. Fixed labels are added to every metric.
+// Use NewServer with WithPort and WithFixedLabels to read the port from the
+// METRICS_PROMETHEUS_PORT environment variable instead.
+func NewPrometheusServer(namespace string, port int, fixedLabels ...Label) (Server, error) {
+	if port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid port %d: must be between 1 and 65535", port)
+	}
 
-func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (*prometheusServer, error) {
-	res := &prometheusServer{
+	s := &prometheusServer{
 		namespace:   namespace,
 		fixedLabels: fixedLabels,
 		registry:    prometheus.NewRegistry(),
@@ -82,20 +55,22 @@ func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (*pro
 		histograms:  make(map[string]*prometheus.HistogramVec),
 		gauges:      make(map[string]*prometheus.GaugeVec),
 	}
+
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(res.registry, promhttp.HandlerOpts{Registry: res.registry}))
-	res.server = &http.Server{
+	mux.Handle("/metrics", promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{Registry: s.registry}))
+	s.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
 
 	go func() {
-		if err := res.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("prometheus http server stopped unexpectedly", "error", err)
 		}
 	}()
 
-	return res, nil
+	logger.Info(fmt.Sprintf("created Prometheus metric server on port %d", port))
+	return s, nil
 }
 
 func (p *prometheusServer) labelNames(labels []Label) []string {
