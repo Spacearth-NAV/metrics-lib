@@ -30,30 +30,20 @@ type prometheusServer struct {
 	fixedLabels []Label
 	registry    *prometheus.Registry
 
-	lock       sync.RWMutex
-	counters   map[string]*prometheus.CounterVec
-	histograms map[string]*prometheus.HistogramVec
-	gauges     map[string]*prometheus.GaugeVec
+	counters   sync.Map // string -> *prometheus.CounterVec
+	histograms sync.Map // string -> *prometheus.HistogramVec
+	gauges     sync.Map // string -> *prometheus.GaugeVec
 
 	server *http.Server
 }
 
 // NewPrometheusServer creates a Prometheus metric server that exposes metrics
 // at /metrics on the given port. Fixed labels are added to every metric.
-// Use NewServer with WithPort and WithFixedLabels to read the port from the
-// METRICS_PROMETHEUS_PORT environment variable instead.
 func NewPrometheusServer(namespace string, port int, fixedLabels ...Label) (Server, error) {
-	if port < 1 || port > 65535 {
-		return nil, fmt.Errorf("invalid port %d: must be between 1 and 65535", port)
-	}
-
 	s := &prometheusServer{
 		namespace:   namespace,
 		fixedLabels: fixedLabels,
 		registry:    prometheus.NewRegistry(),
-		counters:    make(map[string]*prometheus.CounterVec),
-		histograms:  make(map[string]*prometheus.HistogramVec),
-		gauges:      make(map[string]*prometheus.GaugeVec),
 	}
 
 	mux := http.NewServeMux()
@@ -95,62 +85,51 @@ func (p *prometheusServer) labelValues(labels []Label) prometheus.Labels {
 	return res
 }
 
-// getOrCreate returns the cached metric for name, or calls create to register
-// it on first use. It uses a read lock for the fast path (metric already
-// exists) so concurrent calls for different metrics do not block each other.
-// A write lock is acquired only when registration is needed, with a
-// double-check to handle the race between releasing the read lock and
-// acquiring the write lock.
-func getOrCreate[T any](lock *sync.RWMutex, cache map[string]*T, name string, create func() *T) *T {
-	lock.RLock()
-	if v, ok := cache[name]; ok {
-		lock.RUnlock()
-		return v
+// getOrCreate returns the cached metric for name, or registers a new one on
+// first use. sync.Map provides lock-free reads on the fast path. On the slow
+// path two goroutines may both create a collector; Register detects the race
+// via AlreadyRegisteredError and returns the winner's collector so both
+// goroutines end up with the same instance.
+func getOrCreate[T prometheus.Collector](reg prometheus.Registerer, m *sync.Map, name string, create func() T) T {
+	if v, ok := m.Load(name); ok {
+		return v.(T)
 	}
-	lock.RUnlock()
-
-	lock.Lock()
-	defer lock.Unlock()
-
-	if v, ok := cache[name]; ok {
-		return v
+	c := create()
+	if err := reg.Register(c); err != nil {
+		var are prometheus.AlreadyRegisteredError
+		if errors.As(err, &are) {
+			return are.ExistingCollector.(T)
+		}
+		panic(err)
 	}
-
-	v := create()
-	cache[name] = v
-	return v
+	m.Store(name, c)
+	return c
 }
 
 func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.CounterVec {
-	return getOrCreate(&p.lock, p.counters, name, func() *prometheus.CounterVec {
-		c := prometheus.NewCounterVec(prometheus.CounterOpts{
+	return getOrCreate(p.registry, &p.counters, name, func() *prometheus.CounterVec {
+		return prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: p.namespace,
 			Name:      name,
 		}, p.labelNames(labels))
-		p.registry.MustRegister(c)
-		return c
 	})
 }
 
 func (p *prometheusServer) getHistogram(name string, labels []Label) *prometheus.HistogramVec {
-	return getOrCreate(&p.lock, p.histograms, name, func() *prometheus.HistogramVec {
-		h := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	return getOrCreate(p.registry, &p.histograms, name, func() *prometheus.HistogramVec {
+		return prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: p.namespace,
 			Name:      name,
 		}, p.labelNames(labels))
-		p.registry.MustRegister(h)
-		return h
 	})
 }
 
 func (p *prometheusServer) getGauge(name string, labels []Label) *prometheus.GaugeVec {
-	return getOrCreate(&p.lock, p.gauges, name, func() *prometheus.GaugeVec {
-		g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	return getOrCreate(p.registry, &p.gauges, name, func() *prometheus.GaugeVec {
+		return prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: p.namespace,
 			Name:      name,
 		}, p.labelNames(labels))
-		p.registry.MustRegister(g)
-		return g
 	})
 }
 
