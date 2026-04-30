@@ -120,88 +120,75 @@ func (p *prometheusServer) labelValues(labels []Label) prometheus.Labels {
 	return res
 }
 
-func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.CounterVec {
-	p.lock.RLock()
-	if c, ok := p.counters[name]; ok {
-		p.lock.RUnlock()
-		return c
+// getOrCreate returns the cached metric for name, or calls create to register
+// it on first use. It uses a read lock for the fast path (metric already
+// exists) so concurrent calls for different metrics do not block each other.
+// A write lock is acquired only when registration is needed, with a
+// double-check to handle the race between releasing the read lock and
+// acquiring the write lock.
+func getOrCreate[T any](lock *sync.RWMutex, cache map[string]*T, name string, create func() (*T, error)) *T {
+	lock.RLock()
+	if v, ok := cache[name]; ok {
+		lock.RUnlock()
+		return v
 	}
-	p.lock.RUnlock()
+	lock.RUnlock()
 
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
 
-	if c, ok := p.counters[name]; ok {
-		return c
+	if v, ok := cache[name]; ok {
+		return v
 	}
 
-	c := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: p.namespace,
-		Name:      name,
-	}, p.labelNames(labels))
-	if err := p.registry.Register(c); err != nil {
-		logger.Error("failed to register prometheus counter", "name", name, "error", err)
+	v, err := create()
+	if err != nil {
 		return nil
 	}
+	cache[name] = v
+	return v
+}
 
-	p.counters[name] = c
-	return c
+func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.CounterVec {
+	return getOrCreate(&p.lock, p.counters, name, func() (*prometheus.CounterVec, error) {
+		c := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: p.namespace,
+			Name:      name,
+		}, p.labelNames(labels))
+		if err := p.registry.Register(c); err != nil {
+			logger.Error("failed to register prometheus counter", "name", name, "error", err)
+			return nil, err
+		}
+		return c, nil
+	})
 }
 
 func (p *prometheusServer) getHistogram(name string, labels []Label) *prometheus.HistogramVec {
-	p.lock.RLock()
-	if h, ok := p.histograms[name]; ok {
-		p.lock.RUnlock()
-		return h
-	}
-	p.lock.RUnlock()
-
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if h, ok := p.histograms[name]; ok {
-		return h
-	}
-
-	h := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: p.namespace,
-		Name:      name,
-	}, p.labelNames(labels))
-	if err := p.registry.Register(h); err != nil {
-		logger.Error("failed to register prometheus histogram", "name", name, "error", err)
-		return nil
-	}
-
-	p.histograms[name] = h
-	return h
+	return getOrCreate(&p.lock, p.histograms, name, func() (*prometheus.HistogramVec, error) {
+		h := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: p.namespace,
+			Name:      name,
+		}, p.labelNames(labels))
+		if err := p.registry.Register(h); err != nil {
+			logger.Error("failed to register prometheus histogram", "name", name, "error", err)
+			return nil, err
+		}
+		return h, nil
+	})
 }
 
 func (p *prometheusServer) getGauge(name string, labels []Label) *prometheus.GaugeVec {
-	p.lock.RLock()
-	if g, ok := p.gauges[name]; ok {
-		p.lock.RUnlock()
-		return g
-	}
-	p.lock.RUnlock()
-
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if g, ok := p.gauges[name]; ok {
-		return g
-	}
-
-	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: p.namespace,
-		Name:      name,
-	}, p.labelNames(labels))
-	if err := p.registry.Register(g); err != nil {
-		logger.Error("failed to register prometheus gauge", "name", name, "error", err)
-		return nil
-	}
-
-	p.gauges[name] = g
-	return g
+	return getOrCreate(&p.lock, p.gauges, name, func() (*prometheus.GaugeVec, error) {
+		g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: p.namespace,
+			Name:      name,
+		}, p.labelNames(labels))
+		if err := p.registry.Register(g); err != nil {
+			logger.Error("failed to register prometheus gauge", "name", name, "error", err)
+			return nil, err
+		}
+		return g, nil
+	})
 }
 
 func (p *prometheusServer) AddObservation(name string, value float64, labels ...Label) {
