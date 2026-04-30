@@ -37,9 +37,9 @@ type prometheusServer struct {
 	server *http.Server
 }
 
-// NewPrometheusServer creates a Prometheus metric server that exposes metrics
+// newPrometheusServer creates a Prometheus metric server that exposes metrics
 // at /metrics on the given port. Fixed labels are added to every metric.
-func NewPrometheusServer(namespace string, port int, fixedLabels ...Label) (Server, error) {
+func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (Server, error) {
 	s := &prometheusServer{
 		namespace:   namespace,
 		fixedLabels: fixedLabels,

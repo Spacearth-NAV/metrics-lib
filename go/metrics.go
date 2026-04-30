@@ -79,7 +79,7 @@ func NewServer(serverType ServerType, namespace string, opts ...Option) (Server,
 		logger.Info("created Amazon Cloudwatch metric server")
 		res = srv
 	case Prometheus:
-		srv, err := NewPrometheusServer(namespace, cfg.port, cfg.fixedLabels...)
+		srv, err := newPrometheusServer(namespace, cfg.port, cfg.fixedLabels...)
 		if err != nil {
 			logger.Error("failed to create Prometheus metric server", "error", err)
 			return nil, err
