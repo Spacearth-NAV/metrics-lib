@@ -74,8 +74,14 @@ func NewPrometheusServer(namespace string, fixedLabels ...Label) (Server, error)
 }
 
 func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (*prometheusServer, error) {
-	res := buildPrometheusServer(namespace, fixedLabels)
-
+	res := &prometheusServer{
+		namespace:   namespace,
+		fixedLabels: fixedLabels,
+		registry:    prometheus.NewRegistry(),
+		counters:    make(map[string]*prometheus.CounterVec),
+		histograms:  make(map[string]*prometheus.HistogramVec),
+		gauges:      make(map[string]*prometheus.GaugeVec),
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(res.registry, promhttp.HandlerOpts{Registry: res.registry}))
 	res.server = &http.Server{
@@ -90,20 +96,6 @@ func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (*pro
 	}()
 
 	return res, nil
-}
-
-// buildPrometheusServer constructs a prometheusServer with a dedicated registry
-// but does not start the HTTP server. Useful for tests that want to observe
-// the registry directly without binding a port.
-func buildPrometheusServer(namespace string, fixedLabels []Label) *prometheusServer {
-	return &prometheusServer{
-		namespace:   namespace,
-		fixedLabels: fixedLabels,
-		registry:    prometheus.NewRegistry(),
-		counters:    make(map[string]*prometheus.CounterVec),
-		histograms:  make(map[string]*prometheus.HistogramVec),
-		gauges:      make(map[string]*prometheus.GaugeVec),
-	}
 }
 
 func (p *prometheusServer) labelNames(labels []Label) []string {
