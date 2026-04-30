@@ -171,7 +171,6 @@ func (p *prometheusServer) AddObservation(name string, value float64, labels ...
 	if c == nil {
 		return
 	}
-	// Lasciamo che vada in panic se le label di una metrica preesistente non combaciano
 	c.With(p.labelValues(labels)).Add(value)
 }
 
