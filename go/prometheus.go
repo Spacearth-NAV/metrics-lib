@@ -86,24 +86,19 @@ func (p *prometheusServer) labelValues(labels []Label) prometheus.Labels {
 }
 
 // getOrCreate returns the cached metric for name, or registers a new one on
-// first use. sync.Map provides lock-free reads on the fast path. On the slow
-// path two goroutines may both create a collector; Register detects the race
-// via AlreadyRegisteredError and returns the winner's collector so both
-// goroutines end up with the same instance.
+// first use. sync.Map.LoadOrStore is atomic: only the goroutine that wins the
+// store calls MustRegister; any concurrent goroutine gets the stored instance
+// and skips registration entirely.
 func getOrCreate[T prometheus.Collector](reg prometheus.Registerer, m *sync.Map, name string, create func() T) T {
 	if v, ok := m.Load(name); ok {
 		return v.(T)
 	}
 	c := create()
-	if err := reg.Register(c); err != nil {
-		var are prometheus.AlreadyRegisteredError
-		if errors.As(err, &are) {
-			return are.ExistingCollector.(T)
-		}
-		panic(err)
+	actual, loaded := m.LoadOrStore(name, c)
+	if !loaded {
+		reg.MustRegister(c)
 	}
-	m.Store(name, c)
-	return c
+	return actual.(T)
 }
 
 func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.CounterVec {
