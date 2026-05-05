@@ -99,6 +99,11 @@ opts := []metrics.Option{
     metrics.WithFixedLabels(metrics.Label{Key: "environment", Value: environment}),
 }
 
+if provider == "prometheus" {
+    port, _ := strconv.Atoi(envOr("PROMETHEUS_PORT", "8080"))
+    opts = append(opts, metrics.WithPort(port))
+}
+
 metricsServer, err := metrics.NewServer(metrics.ServerType(provider), namespace, opts...)
 if err != nil {
     // handle error
