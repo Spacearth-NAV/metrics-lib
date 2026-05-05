@@ -45,7 +45,7 @@ type Option func(*serverConfig)
 
 type serverConfig struct {
 	fixedLabels []Label
-	port        int
+	port        *int
 }
 
 // WithFixedLabels adds labels that are attached to every metric regardless of backend.
@@ -56,9 +56,8 @@ func WithFixedLabels(labels ...Label) Option {
 }
 
 // WithPort sets the TCP port for backends that expose an HTTP server (Prometheus).
-// Required when using NewServer with the Prometheus backend.
 func WithPort(port int) Option {
-	return func(c *serverConfig) { c.port = port }
+	return func(c *serverConfig) { c.port = &port }
 }
 
 func NewServer(serverType ServerType, namespace string, opts ...Option) (Server, error) {
@@ -79,7 +78,11 @@ func NewServer(serverType ServerType, namespace string, opts ...Option) (Server,
 		logger.Info("created Amazon Cloudwatch metric server")
 		res = srv
 	case Prometheus:
-		srv, err := newPrometheusServer(namespace, cfg.port, cfg.fixedLabels...)
+		port := defaultPrometheusPort
+		if cfg.port != nil {
+			port = *cfg.port
+		}
+		srv, err := newPrometheusServer(namespace, port, cfg.fixedLabels...)
 		if err != nil {
 			logger.Error("failed to create Prometheus metric server", "error", err)
 			return nil, err

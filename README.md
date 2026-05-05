@@ -38,7 +38,7 @@ Refer to the [AWS SDK configuration documentation](https://docs.aws.amazon.com/s
 The Prometheus backend starts an HTTP server that exposes metrics at `/metrics`.
 
 - **Python**: port is set via the `port` keyword argument (default `8080`).
-- **Go**: port is required and must be set explicitly via `WithPort`.
+- **Go**: port defaults to `8080` if not set via `WithPort`.
 
 > **Note:** Prometheus requires all label names for a metric to be declared upfront. The label schema is locked on the first call for each metric name. Any subsequent call with a different set of label keys will raise an error. Make sure to use the same label keys consistently across all calls to the same metric.
 
@@ -80,7 +80,6 @@ metric_server = MetricServer.create_server(provider, namespace, labels, **extra_
 ```go
 import (
     "os"
-    "strconv"
 
     metrics "github.com/Spacearth-NAV/metrics-lib/go"
 )
@@ -97,13 +96,7 @@ namespace   := envOr("METRIC_NAMESPACE", "default")
 environment := envOr("ENVIRONMENT", "development")
 
 opts := []metrics.Option{
-    metrics.WithFixedLabels(metrics.Label{"environment", environment}),
-}
-
-// Prometheus requires a port
-if provider == "prometheus" {
-    port, _ := strconv.Atoi(envOr("PROMETHEUS_PORT", "8080"))
-    opts = append(opts, metrics.WithPort(port))
+    metrics.WithFixedLabels(metrics.Label{Key: "environment", Value: environment}),
 }
 
 metricsServer, err := metrics.NewServer(metrics.ServerType(provider), namespace, opts...)
@@ -111,7 +104,7 @@ if err != nil {
     // handle error
 }
 // AWS:        set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
-// Prometheus: set PROMETHEUS_PORT (default: 8080)
+// Prometheus: starts on :8080 by default; override with metrics.WithPort(port)
 // No-op:      no configuration required
 ```
 

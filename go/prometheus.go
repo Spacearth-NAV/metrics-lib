@@ -25,6 +25,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const defaultPrometheusPort = 8080
+
 type prometheusServer struct {
 	namespace   string
 	fixedLabels []Label
