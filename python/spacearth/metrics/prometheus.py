@@ -37,7 +37,10 @@ class PrometheusMetricServer(MetricServer):
         self.__counters: dict[str, Counter] = {}
         self.__histograms: dict[str, Histogram] = {}
         self.__gauges: dict[str, Gauge] = {}
-        start_http_server(port)
+        try:
+            start_http_server(port)
+        except OSError as e:
+            raise RuntimeError(f"failed to start Prometheus HTTP server on port {port}") from e
 
     def __label_names(self, labels: Optional[dict[str, str]]):
         return [*(labels.keys() if labels is not None else []), *self._fixed_labels]
