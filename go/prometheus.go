@@ -72,7 +72,21 @@ func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (Serv
 	return s, nil
 }
 
-func (p *prometheusServer) labelNames(labels []Label) []string {
+// checkLabelCollision panics if any call-site label key matches a fixed label key,
+// mirroring the ValueError raised by the Python implementation.
+func (p *prometheusServer) checkLabelCollision(labels []Label) {
+	fixed := make(map[string]struct{}, len(p.fixedLabels))
+	for _, l := range p.fixedLabels {
+		fixed[l.Key] = struct{}{}
+	}
+	for _, l := range labels {
+		if _, ok := fixed[l.Key]; ok {
+			panic(fmt.Sprintf("metrics: label key %q conflicts with a fixed label", l.Key))
+		}
+	}
+}
+
+func (p *prometheusServer) mergedLabelNames(labels []Label) []string {
 	res := make([]string, 0, len(labels)+len(p.fixedLabels))
 	for _, l := range labels {
 		res = append(res, l.Key)
@@ -83,7 +97,7 @@ func (p *prometheusServer) labelNames(labels []Label) []string {
 	return res
 }
 
-func (p *prometheusServer) labelValues(labels []Label) prometheus.Labels {
+func (p *prometheusServer) mergedLabelValues(labels []Label) prometheus.Labels {
 	res := make(prometheus.Labels, len(labels)+len(p.fixedLabels))
 	for _, l := range labels {
 		res[l.Key] = l.Value
@@ -115,7 +129,7 @@ func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.C
 		return prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: p.namespace,
 			Name:      name,
-		}, p.labelNames(labels))
+		}, p.mergedLabelNames(labels))
 	})
 }
 
@@ -124,7 +138,7 @@ func (p *prometheusServer) getHistogram(name string, labels []Label) *prometheus
 		return prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: p.namespace,
 			Name:      name,
-		}, p.labelNames(labels))
+		}, p.mergedLabelNames(labels))
 	})
 }
 
@@ -133,26 +147,31 @@ func (p *prometheusServer) getGauge(name string, labels []Label) *prometheus.Gau
 		return prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: p.namespace,
 			Name:      name,
-		}, p.labelNames(labels))
+		}, p.mergedLabelNames(labels))
 	})
 }
 
 func (p *prometheusServer) AddObservation(name string, value float64, labels ...Label) {
-	p.getCounter(name, labels).With(p.labelValues(labels)).Add(value)
+	p.checkLabelCollision(labels)
+	p.getCounter(name, labels).With(p.mergedLabelValues(labels)).Add(value)
 }
 
 func (p *prometheusServer) MeasureTime(name string, value time.Duration, labels ...Label) {
-	p.getHistogram(name, labels).With(p.labelValues(labels)).Observe(value.Seconds())
+	p.checkLabelCollision(labels)
+	p.getHistogram(name, labels).With(p.mergedLabelValues(labels)).Observe(value.Seconds())
 }
 
 func (p *prometheusServer) IncrementValue(name string, value float64, labels ...Label) {
-	p.getGauge(name, labels).With(p.labelValues(labels)).Add(value)
+	p.checkLabelCollision(labels)
+	p.getGauge(name, labels).With(p.mergedLabelValues(labels)).Add(value)
 }
 
 func (p *prometheusServer) DecrementValue(name string, value float64, labels ...Label) {
-	p.getGauge(name, labels).With(p.labelValues(labels)).Sub(value)
+	p.checkLabelCollision(labels)
+	p.getGauge(name, labels).With(p.mergedLabelValues(labels)).Sub(value)
 }
 
 func (p *prometheusServer) SetValue(name string, value float64, labels ...Label) {
-	p.getGauge(name, labels).With(p.labelValues(labels)).Set(value)
+	p.checkLabelCollision(labels)
+	p.getGauge(name, labels).With(p.mergedLabelValues(labels)).Set(value)
 }
