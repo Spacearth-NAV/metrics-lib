@@ -6,7 +6,7 @@ authors = [
     {name = "Michelle Laurenti",email = "michelle.laurenti@spacearthnav.it"}
 ]
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 keywords = ["metrics", "cloudwatch", "prometheus", "monitoring", "observability"]
@@ -63,4 +63,3 @@ ignore = [".poetry", ".venv"]
 
 [tool.pylint.format]
 max-line-length = 120
-
