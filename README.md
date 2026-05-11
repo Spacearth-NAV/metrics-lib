@@ -40,7 +40,13 @@ The Prometheus backend starts an HTTP server that exposes metrics at `/metrics`.
 - **Python**: port is set via the `port` keyword argument (default `8080`).
 - **Go**: port defaults to `8080` if not set via `WithPort`.
 
-> **Note:** Prometheus requires all label names for a metric to be declared upfront. The label schema is locked on the first call for each metric name. Any subsequent call with a different set of label keys will raise an error. Make sure to use the same label keys consistently across all calls to the same metric.
+> **Note:** Prometheus requires all label names for a metric to be declared upfront. The label schema is locked on the first call for each metric name. Any subsequent call with a different set of label keys will cause an error: a `ValueError` in Python, a panic in Go. Make sure to use the same label keys consistently across all calls to the same metric.
+
+> **Note:** Label keys passed at call-site must not overlap with fixed label keys. Passing a key that matches a fixed label key will cause a `ValueError` in Python and a panic in Go.
+
+#### Security
+
+The `/metrics` endpoint is served over plain HTTP with no authentication or TLS. This follows the standard Prometheus pull model, where the Prometheus server scrapes from within a trusted network. **Do not expose the metrics port to untrusted networks.** Restrict access at the network level (security groups, firewall rules, or a service mesh policy) so that only the Prometheus scraper can reach the port.
 
 #### No-op
 
@@ -184,3 +190,13 @@ metricsServer.DecrementValue("active_connections", 1, metrics.Label{"endpoint", 
 
 metricsServer.SetValue("queue_depth", 42)
 ```
+
+---
+
+## Known limitations
+
+### No graceful shutdown (Prometheus backend)
+
+The Prometheus backend starts an HTTP server in a background goroutine. Neither the `Server` interface nor any concrete implementation exposes a `Close` or `Shutdown` method. The HTTP listener is held until the process exits.
+
+If your application needs to stop the metrics server cleanly — for example, in integration tests that create multiple servers — this must be handled at the process level (e.g. via `os.Signal` → `os.Exit`), not through this library.
