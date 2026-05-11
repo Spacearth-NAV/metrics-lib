@@ -16,6 +16,7 @@
 This file provides a Prometheus-based metric server.
 """
 
+from threading import Lock
 from typing import Optional
 
 from prometheus_client import Counter, Gauge, Histogram, start_http_server  # type: ignore
@@ -34,6 +35,7 @@ class PrometheusMetricServer(MetricServer):
 
     def __init__(self, namespace: str, fixed_labels: dict[str, str], *, port: int = 8080):
         super().__init__(namespace, fixed_labels)
+        self.__lock = Lock()
         self.__counters: dict[str, Counter] = {}
         self.__histograms: dict[str, Histogram] = {}
         self.__gauges: dict[str, Gauge] = {}
@@ -46,55 +48,50 @@ class PrometheusMetricServer(MetricServer):
         return [*(labels.keys() if labels is not None else []), *self._fixed_labels]
 
     def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
-        try:
-            counter = self.__counters[name]
-        except KeyError:
-            counter = Counter(name, "", self.__label_names(labels), namespace=self._namespace)
-            self.__counters[name] = counter
+        with self.__lock:
+            if name not in self.__counters:
+                self.__counters[name] = Counter(name, "", self.__label_names(labels), namespace=self._namespace)
+        counter = self.__counters[name]
         if labels is not None:
             counter = counter.labels(**labels)
         counter = counter.labels(**self._fixed_labels)
         counter.inc(value)
 
     def measure_time(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
-        try:
-            histogram = self.__histograms[name]
-        except KeyError:
-            histogram = Histogram(name, "", self.__label_names(labels), namespace=self._namespace)
-            self.__histograms[name] = histogram
+        with self.__lock:
+            if name not in self.__histograms:
+                self.__histograms[name] = Histogram(name, "", self.__label_names(labels), namespace=self._namespace)
+        histogram = self.__histograms[name]
         if labels is not None:
             histogram = histogram.labels(**labels)
         histogram = histogram.labels(**self._fixed_labels)
         histogram.observe(value)
 
     def increment_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
-        try:
-            gauge = self.__gauges[name]
-        except KeyError:
-            gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
-            self.__gauges[name] = gauge
+        with self.__lock:
+            if name not in self.__gauges:
+                self.__gauges[name] = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
+        gauge = self.__gauges[name]
         if labels is not None:
             gauge = gauge.labels(**labels)
         gauge = gauge.labels(**self._fixed_labels)
         gauge.inc(value)
 
     def decrement_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
-        try:
-            gauge = self.__gauges[name]
-        except KeyError:
-            gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
-            self.__gauges[name] = gauge
+        with self.__lock:
+            if name not in self.__gauges:
+                self.__gauges[name] = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
+        gauge = self.__gauges[name]
         if labels is not None:
             gauge = gauge.labels(**labels)
         gauge = gauge.labels(**self._fixed_labels)
         gauge.dec(value)
 
     def set_value(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
-        try:
-            gauge = self.__gauges[name]
-        except KeyError:
-            gauge = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
-            self.__gauges[name] = gauge
+        with self.__lock:
+            if name not in self.__gauges:
+                self.__gauges[name] = Gauge(name, "", self.__label_names(labels), namespace=self._namespace)
+        gauge = self.__gauges[name]
         if labels is not None:
             gauge = gauge.labels(**labels)
         gauge = gauge.labels(**self._fixed_labels)
