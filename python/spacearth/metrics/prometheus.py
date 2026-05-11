@@ -45,6 +45,11 @@ class PrometheusMetricServer(MetricServer):
         except OSError as e:
             raise RuntimeError(f"failed to start Prometheus HTTP server on port {port}") from e
 
+    @staticmethod
+    def __labeled(metric, merged: dict[str, str]):
+        # prometheus_client raises ValueError on .labels() when labelnames=[]
+        return metric.labels(**merged) if merged else metric
+
     def __merged_labels(self, labels: Optional[dict[str, str]]) -> dict[str, str]:
         if labels is not None:
             collision = set(labels.keys()) & set(self._fixed_labels.keys())
@@ -59,7 +64,7 @@ class PrometheusMetricServer(MetricServer):
                 self.__counters[name] = Counter(
                     name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
                 )
-        self.__counters[name].labels(**merged).inc(value)
+        self.__labeled(self.__counters[name], merged).inc(value)
 
     def measure_time(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
@@ -68,7 +73,7 @@ class PrometheusMetricServer(MetricServer):
                 self.__histograms[name] = Histogram(
                     name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
                 )
-        self.__histograms[name].labels(**merged).observe(value)
+        self.__labeled(self.__histograms[name], merged).observe(value)
 
     def increment_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
@@ -77,7 +82,7 @@ class PrometheusMetricServer(MetricServer):
                 self.__gauges[name] = Gauge(
                     name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
                 )
-        self.__gauges[name].labels(**merged).inc(value)
+        self.__labeled(self.__gauges[name], merged).inc(value)
 
     def decrement_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
@@ -86,7 +91,7 @@ class PrometheusMetricServer(MetricServer):
                 self.__gauges[name] = Gauge(
                     name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
                 )
-        self.__gauges[name].labels(**merged).dec(value)
+        self.__labeled(self.__gauges[name], merged).dec(value)
 
     def set_value(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
@@ -95,4 +100,4 @@ class PrometheusMetricServer(MetricServer):
                 self.__gauges[name] = Gauge(
                     name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
                 )
-        self.__gauges[name].labels(**merged).set(value)
+        self.__labeled(self.__gauges[name], merged).set(value)
