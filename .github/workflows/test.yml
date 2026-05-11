@@ -36,5 +36,5 @@ jobs:
         go vet ./...
     - name: Run unit tests
       run: |
-        poetry run python -m unittest
+        poetry run python -m unittest discover -s python/tests
         go test ./...
