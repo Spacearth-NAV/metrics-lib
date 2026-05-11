@@ -58,8 +58,10 @@ func newPrometheusServer(namespace string, port int, fixedLabels ...Label) (Serv
 	}
 
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {
