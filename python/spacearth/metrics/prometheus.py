@@ -44,7 +44,11 @@ class PrometheusMetricServer(MetricServer):
         except OSError as e:
             raise RuntimeError(f"failed to start Prometheus HTTP server on port {port}") from e
 
-    def __label_names(self, labels: Optional[dict[str, str]]):
+    def __label_names(self, labels: Optional[dict[str, str]]) -> list[str]:
+        if labels is not None:
+            collision = set(labels.keys()) & set(self._fixed_labels.keys())
+            if collision:
+                raise ValueError(f"label keys conflict with fixed_labels: {collision}")
         return [*(labels.keys() if labels is not None else []), *self._fixed_labels]
 
     def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
