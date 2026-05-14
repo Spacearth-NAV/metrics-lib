@@ -31,10 +31,12 @@ from spacearth.metrics.aws import AmazonCloudwatchMetricServer
 def reset_class_state():
     AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__queue = Queue()  # pylint: disable=protected-access
     AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__metrics = {}  # pylint: disable=protected-access
-    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__observations = defaultdict(  # pylint: disable=protected-access
+    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__observations = defaultdict(
         lambda: defaultdict(list)
-    )
-    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__last_values = defaultdict(int)  # pylint: disable=protected-access
+    )  # pylint: disable=protected-access
+    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__last_values = defaultdict(
+        int
+    )  # pylint: disable=protected-access
 
 
 def metric_key(name: str, labels=None) -> str:
