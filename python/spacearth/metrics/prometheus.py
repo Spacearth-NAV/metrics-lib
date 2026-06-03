@@ -54,45 +54,75 @@ class PrometheusMetricServer(MetricServer):
 
     def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        with self.__lock:
-            if name not in self.__counters:
-                self.__counters[name] = Counter(
-                    name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                )
-        self.__counters[name].labels(**merged).inc(value)
+        try:
+            counter = self.__counters[name]
+        except KeyError:
+            with self.__lock:
+                try:
+                    counter = self.__counters[name]
+                except KeyError:
+                    counter = Counter(
+                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
+                    )
+                    self.__counters[name] = counter
+        counter.labels(**merged).inc(value)
 
     def measure_time(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        with self.__lock:
-            if name not in self.__histograms:
-                self.__histograms[name] = Histogram(
-                    name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                )
-        self.__histograms[name].labels(**merged).observe(value)
+        try:
+            histogram = self.__histograms[name]
+        except KeyError:
+            with self.__lock:
+                try:
+                    histogram = self.__histograms[name]
+                except KeyError:
+                    histogram = Histogram(
+                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
+                    )
+                    self.__histograms[name] = histogram
+        histogram.labels(**merged).observe(value)
 
     def increment_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        with self.__lock:
-            if name not in self.__gauges:
-                self.__gauges[name] = Gauge(
-                    name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                )
-        self.__gauges[name].labels(**merged).inc(value)
+        try:
+            gauge = self.__gauges[name]
+        except KeyError:
+            with self.__lock:
+                try:
+                    gauge = self.__gauges[name]
+                except KeyError:
+                    gauge = Gauge(
+                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
+                    )
+                    self.__gauges[name] = gauge
+        gauge.labels(**merged).inc(value)
 
     def decrement_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        with self.__lock:
-            if name not in self.__gauges:
-                self.__gauges[name] = Gauge(
-                    name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                )
-        self.__gauges[name].labels(**merged).dec(value)
+        try:
+            gauge = self.__gauges[name]
+        except KeyError:
+            with self.__lock:
+                try:
+                    gauge = self.__gauges[name]
+                except KeyError:
+                    gauge = Gauge(
+                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
+                    )
+                    self.__gauges[name] = gauge
+        gauge.labels(**merged).dec(value)
 
     def set_value(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        with self.__lock:
-            if name not in self.__gauges:
-                self.__gauges[name] = Gauge(
-                    name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                )
-        self.__gauges[name].labels(**merged).set(value)
+        try:
+            gauge = self.__gauges[name]
+        except KeyError:
+            with self.__lock:
+                try:
+                    gauge = self.__gauges[name]
+                except KeyError:
+                    gauge = Gauge(
+                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
+                    )
+                    self.__gauges[name] = gauge
+        gauge.labels(**merged).set(value)
