@@ -68,7 +68,7 @@ explicit_package_bases = true
 mypy_path = "python"
 
 [tool.pylint.main]
-ignore = [".poetry", ".venv", "tests"]
+ignore = [".poetry", ".venv"]
 
 [tool.pylint.format]
 max-line-length = 120
