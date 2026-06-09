@@ -118,7 +118,7 @@ func TestFixedLabels_appearOnMetric(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal("metric testns_requests_total not found")
+	t.Fatal("metric testns_requests not found")
 }
 
 func TestLabelCollision_panics(t *testing.T) {
