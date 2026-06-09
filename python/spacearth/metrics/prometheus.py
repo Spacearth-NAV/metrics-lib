@@ -43,8 +43,7 @@ class PrometheusMetricServer(MetricServer):
         try:
             start_http_server(port, registry=self._registry)
         except OSError as e:
-            raise RuntimeError(
-                f"failed to start Prometheus HTTP server on port {port}") from e
+            raise RuntimeError(f"failed to start Prometheus HTTP server on port {port}") from e
 
     def __get_or_create_metric(self, name: str, merged_labels: dict[str, str], cache: dict, metric_class):
         try:
@@ -64,31 +63,25 @@ class PrometheusMetricServer(MetricServer):
         if labels is not None:
             collision = set(labels.keys()) & set(self._fixed_labels.keys())
             if collision:
-                raise ValueError(
-                    f"label keys conflict with fixed_labels: {collision}")
+                raise ValueError(f"label keys conflict with fixed_labels: {collision}")
         return {**(labels or {}), **self._fixed_labels}
 
     def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        self.__get_or_create_metric(
-            name, merged, self._counters, Counter).inc(value)
+        self.__get_or_create_metric(name, merged, self._counters, Counter).inc(value)
 
     def measure_time(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        self.__get_or_create_metric(
-            name, merged, self._histograms, Histogram).observe(value)
+        self.__get_or_create_metric(name, merged, self._histograms, Histogram).observe(value)
 
     def increment_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        self.__get_or_create_metric(
-            name, merged, self._gauges, Gauge).inc(value)
+        self.__get_or_create_metric(name, merged, self._gauges, Gauge).inc(value)
 
     def decrement_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        self.__get_or_create_metric(
-            name, merged, self._gauges, Gauge).dec(value)
+        self.__get_or_create_metric(name, merged, self._gauges, Gauge).dec(value)
 
     def set_value(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        self.__get_or_create_metric(
-            name, merged, self._gauges, Gauge).set(value)
+        self.__get_or_create_metric(name, merged, self._gauges, Gauge).set(value)
