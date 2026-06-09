@@ -28,7 +28,7 @@ class TestPrometheusMetricServer(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.server = PrometheusMetricServer("testns", {})
-        self.registry = self.server._PrometheusMetricServer__registry  # pylint: disable=protected-access
+        self.registry = self.server._registry  # pylint: disable=protected-access
 
     def _output(self) -> str:
         return generate_latest(self.registry).decode("utf-8")
@@ -61,7 +61,7 @@ class TestPrometheusMetricServer(unittest.TestCase):
 
     def test_fixed_labels_appear_on_all_metrics(self):
         server = PrometheusMetricServer("testns2", {"env": "prod"})
-        registry = server._PrometheusMetricServer__registry  # pylint: disable=protected-access
+        registry = server._registry  # pylint: disable=protected-access
         server.add_observation("events", 1)
         output = generate_latest(registry).decode("utf-8")
         self.assertIn('env="prod"', output)
