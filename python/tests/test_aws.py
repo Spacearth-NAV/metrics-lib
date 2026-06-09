@@ -14,29 +14,11 @@
 
 # pylint: disable=missing-function-docstring,missing-module-docstring,missing-class-docstring
 
-# NOTE: AmazonCloudwatchMetricServer uses class-level mutable state (__queue,
-# __metrics, __observations, __last_values). reset_class_state() resets them
-# before each test to prevent cross-test contamination. This is a known
-# pre-existing design issue in the implementation.
-
 import json
 import unittest
-from collections import defaultdict
-from queue import Queue
 from unittest.mock import MagicMock, patch
 
 from spacearth.metrics.aws import AmazonCloudwatchMetricServer
-
-
-def reset_class_state():
-    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__queue = Queue()  # pylint: disable=protected-access
-    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__metrics = {}  # pylint: disable=protected-access
-    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__observations = defaultdict(
-        lambda: defaultdict(list)
-    )  # pylint: disable=protected-access
-    AmazonCloudwatchMetricServer._AmazonCloudwatchMetricServer__last_values = defaultdict(
-        int
-    )  # pylint: disable=protected-access
 
 
 def metric_key(name: str, labels=None) -> str:
@@ -45,31 +27,28 @@ def metric_key(name: str, labels=None) -> str:
 
 class TestAWSGaugeAccumulation(unittest.TestCase):
     def setUp(self):
-        reset_class_state()
         patcher = patch("boto3.client", return_value=MagicMock())
         patcher.start()
         self.addCleanup(patcher.stop)
         self.server = AmazonCloudwatchMetricServer("testns", {})
-        self.last_values = self.server._AmazonCloudwatchMetricServer__last_values  # pylint: disable=protected-access
-        self.queue = self.server._AmazonCloudwatchMetricServer__queue  # pylint: disable=protected-access
 
     def _drain(self):
-        self.queue.join()
+        self.server._queue.join()  # pylint: disable=protected-access
 
     def test_increment_accumulates(self):
         self.server.increment_value("gauge_inc", 5)
         self.server.increment_value("gauge_inc", 3)
         self._drain()
-        self.assertEqual(self.last_values[metric_key("gauge_inc")], 8)
+        self.assertEqual(self.server._last_values[metric_key("gauge_inc")], 8)  # pylint: disable=protected-access
 
     def test_decrement_reduces(self):
         self.server.increment_value("gauge_dec", 10)
         self.server.decrement_value("gauge_dec", 3)
         self._drain()
-        self.assertEqual(self.last_values[metric_key("gauge_dec")], 7)
+        self.assertEqual(self.server._last_values[metric_key("gauge_dec")], 7)  # pylint: disable=protected-access
 
     def test_set_value_overwrites(self):
         self.server.increment_value("gauge_set", 10)
         self.server.set_value("gauge_set", 1)
         self._drain()
-        self.assertEqual(self.last_values[metric_key("gauge_set")], 1)
+        self.assertEqual(self.server._last_values[metric_key("gauge_set")], 1)  # pylint: disable=protected-access
