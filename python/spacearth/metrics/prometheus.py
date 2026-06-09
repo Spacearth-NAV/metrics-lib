@@ -43,86 +43,58 @@ class PrometheusMetricServer(MetricServer):
         try:
             start_http_server(port, registry=self.__registry)
         except OSError as e:
-            raise RuntimeError(f"failed to start Prometheus HTTP server on port {port}") from e
+            raise RuntimeError(
+                f"failed to start Prometheus HTTP server on port {port}") from e
+
+    def __get_or_create_metric(self, name: str, merged_labels: dict[str, str], cache: dict, metric_class):
+        """Get existing metric or create new one with proper locking."""
+        try:
+            metric = cache[name]
+        except KeyError:
+            with self.__lock:
+                try:
+                    metric = cache[name]
+                except KeyError:
+                    metric = metric_class(
+                        name, "", list(merged_labels.keys()) or None, namespace=self._namespace, registry=self.__registry
+                    )
+                    cache[name] = metric
+        return metric.labels(**merged_labels) if merged_labels else metric
 
     def __merged_labels(self, labels: Optional[dict[str, str]]) -> dict[str, str]:
         if labels is not None:
             collision = set(labels.keys()) & set(self._fixed_labels.keys())
             if collision:
-                raise ValueError(f"label keys conflict with fixed_labels: {collision}")
+                raise ValueError(
+                    f"label keys conflict with fixed_labels: {collision}")
         return {**(labels or {}), **self._fixed_labels}
 
     def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        try:
-            counter = self.__counters[name]
-        except KeyError:
-            with self.__lock:
-                try:
-                    counter = self.__counters[name]
-                except KeyError:
-                    counter = Counter(
-                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                    )
-                    self.__counters[name] = counter
-        counter.labels(**merged).inc(value)
+        self.__get_or_create_metric(
+            name, merged, self.__counters, Counter).inc(value)
+
+    def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
+        merged = self.__merged_labels(labels)
+        self.__get_or_create_metric(
+            name, merged, self.__counters, Counter).inc(value)
 
     def measure_time(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        try:
-            histogram = self.__histograms[name]
-        except KeyError:
-            with self.__lock:
-                try:
-                    histogram = self.__histograms[name]
-                except KeyError:
-                    histogram = Histogram(
-                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                    )
-                    self.__histograms[name] = histogram
-        histogram.labels(**merged).observe(value)
+        self.__get_or_create_metric(
+            name, merged, self.__histograms, Histogram).observe(value)
 
     def increment_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        try:
-            gauge = self.__gauges[name]
-        except KeyError:
-            with self.__lock:
-                try:
-                    gauge = self.__gauges[name]
-                except KeyError:
-                    gauge = Gauge(
-                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                    )
-                    self.__gauges[name] = gauge
-        gauge.labels(**merged).inc(value)
+        self.__get_or_create_metric(
+            name, merged, self.__gauges, Gauge).inc(value)
 
     def decrement_value(self, name: str, value: float = 1, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        try:
-            gauge = self.__gauges[name]
-        except KeyError:
-            with self.__lock:
-                try:
-                    gauge = self.__gauges[name]
-                except KeyError:
-                    gauge = Gauge(
-                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                    )
-                    self.__gauges[name] = gauge
-        gauge.labels(**merged).dec(value)
+        self.__get_or_create_metric(
+            name, merged, self.__gauges, Gauge).dec(value)
 
     def set_value(self, name: str, value: float, labels: Optional[dict[str, str]] = None):
         merged = self.__merged_labels(labels)
-        try:
-            gauge = self.__gauges[name]
-        except KeyError:
-            with self.__lock:
-                try:
-                    gauge = self.__gauges[name]
-                except KeyError:
-                    gauge = Gauge(
-                        name, "", list(merged.keys()), namespace=self._namespace, registry=self.__registry
-                    )
-                    self.__gauges[name] = gauge
-        gauge.labels(**merged).set(value)
+        self.__get_or_create_metric(
+            name, merged, self.__gauges, Gauge).set(value)
