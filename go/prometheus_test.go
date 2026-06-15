@@ -21,14 +21,14 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestPrometheusServer(t *testing.T, fixedLabels ...Label) *prometheusServer {
 	t.Helper()
 	srv, err := newPrometheusServer("testns", 0, fixedLabels...)
-	if err != nil {
-		t.Fatalf("newPrometheusServer: %v", err)
-	}
+	require.NoError(t, err)
 	return srv.(*prometheusServer)
 }
 
@@ -37,9 +37,7 @@ func TestAddObservation_incrementsCounter(t *testing.T) {
 	ps.AddObservation("requests", 3.0)
 
 	got := testutil.ToFloat64(ps.getCounter("requests", nil).With(prometheus.Labels{}))
-	if got != 3.0 {
-		t.Errorf("want 3.0, got %f", got)
-	}
+	assert.Equal(t, 3.0, got)
 }
 
 func TestAddObservation_accumulates(t *testing.T) {
@@ -48,9 +46,7 @@ func TestAddObservation_accumulates(t *testing.T) {
 	ps.AddObservation("requests", 5.0)
 
 	got := testutil.ToFloat64(ps.getCounter("requests", nil).With(prometheus.Labels{}))
-	if got != 7.0 {
-		t.Errorf("want 7.0, got %f", got)
-	}
+	assert.Equal(t, 7.0, got)
 }
 
 func TestMeasureTime_recordsHistogram(t *testing.T) {
@@ -59,22 +55,19 @@ func TestMeasureTime_recordsHistogram(t *testing.T) {
 	ps.MeasureTime("latency", 700*time.Millisecond)
 
 	gathered, err := ps.registry.Gather()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
+	var found bool
 	for _, mf := range gathered {
 		if mf.GetName() == "testns_latency" {
 			h := mf.GetMetric()[0].GetHistogram()
-			if h.GetSampleCount() != 2 {
-				t.Errorf("want SampleCount 2, got %d", h.GetSampleCount())
-			}
-			if h.GetSampleSum() != 1.0 {
-				t.Errorf("want SampleSum 1.0, got %f", h.GetSampleSum())
-			}
-			return
+			assert.Equal(t, uint64(2), h.GetSampleCount())
+			assert.Equal(t, 1.0, h.GetSampleSum())
+			found = true
+			break
 		}
 	}
-	t.Fatal("metric testns_latency not found")
+	require.True(t, found, "metric testns_latency not found")
 }
 
 func TestGauge_incrementThenDecrement(t *testing.T) {
@@ -83,9 +76,7 @@ func TestGauge_incrementThenDecrement(t *testing.T) {
 	ps.DecrementValue("connections", 2.0)
 
 	got := testutil.ToFloat64(ps.getGauge("connections", nil).With(prometheus.Labels{}))
-	if got != 3.0 {
-		t.Errorf("want 3.0, got %f", got)
-	}
+	assert.Equal(t, 3.0, got)
 }
 
 func TestGauge_setValueOverwrites(t *testing.T) {
@@ -94,9 +85,7 @@ func TestGauge_setValueOverwrites(t *testing.T) {
 	ps.SetValue("queue_depth", 1.0)
 
 	got := testutil.ToFloat64(ps.getGauge("queue_depth", nil).With(prometheus.Labels{}))
-	if got != 1.0 {
-		t.Errorf("want 1.0, got %f", got)
-	}
+	assert.Equal(t, 1.0, got)
 }
 
 func TestFixedLabels_appearOnMetric(t *testing.T) {
@@ -104,58 +93,47 @@ func TestFixedLabels_appearOnMetric(t *testing.T) {
 	ps.AddObservation("requests", 1.0)
 
 	gathered, err := ps.registry.Gather()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
+	var found bool
 	for _, mf := range gathered {
 		if mf.GetName() == "testns_requests" {
+			found = true
+			var labelFound bool
 			for _, lp := range mf.GetMetric()[0].GetLabel() {
 				if lp.GetName() == "env" && lp.GetValue() == "prod" {
-					return
+					labelFound = true
+					break
 				}
 			}
-			t.Error("label env=prod not found on metric")
-			return
+			assert.True(t, labelFound, "label env=prod not found on metric")
+			break
 		}
 	}
-	t.Fatal("metric testns_requests not found")
+	require.True(t, found, "metric testns_requests not found")
 }
 
 func TestLabelCollision_panics(t *testing.T) {
 	ps := newTestPrometheusServer(t, Label{"env", "prod"})
-
-	defer func() {
-		if recover() == nil {
-			t.Error("expected panic on label collision, got none")
-		}
-	}()
-
-	ps.AddObservation("requests", 1.0, Label{"env", "dev"})
+	assert.Panics(t, func() {
+		ps.AddObservation("requests", 1.0, Label{"env", "dev"})
+	})
 }
 
 func TestSchemeLock_differentLabelKeysPanic(t *testing.T) {
 	ps := newTestPrometheusServer(t)
 	ps.AddObservation("requests", 1.0, Label{"endpoint", "/a"})
-
-	defer func() {
-		if recover() == nil {
-			t.Error("expected panic on label schema change, got none")
-		}
-	}()
-
-	ps.AddObservation("requests", 1.0, Label{"method", "GET"})
+	assert.Panics(t, func() {
+		ps.AddObservation("requests", 1.0, Label{"method", "GET"})
+	})
 }
 
 func TestPortConflict_returnsError(t *testing.T) {
 	ln, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer ln.Close()
 
 	port := ln.Addr().(*net.TCPAddr).Port
 	_, err = newPrometheusServer("testns", port)
-	if err == nil {
-		t.Error("want error on occupied port, got nil")
-	}
+	assert.Error(t, err)
 }

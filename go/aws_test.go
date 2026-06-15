@@ -16,6 +16,9 @@ package metrics
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetCounts(t *testing.T) {
@@ -49,21 +52,13 @@ func TestGetCounts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			counts, values := getCounts(tc.input)
-			if len(counts) != len(values) {
-				t.Fatalf("len mismatch: counts=%d values=%d", len(counts), len(values))
-			}
+			require.Equal(t, len(counts), len(values), "counts and values slices must have equal length")
+
 			got := make(map[float64]float64, len(values))
 			for i, v := range values {
 				got[v] = counts[i]
 			}
-			if len(got) != len(tc.wantPairs) {
-				t.Errorf("want %d pairs, got %d", len(tc.wantPairs), len(got))
-			}
-			for v, wantCount := range tc.wantPairs {
-				if got[v] != wantCount {
-					t.Errorf("value %f: want count %f, got %f", v, wantCount, got[v])
-				}
-			}
+			assert.Equal(t, tc.wantPairs, got)
 		})
 	}
 }
@@ -75,18 +70,14 @@ func TestMetricIdentifier_isDeterministic(t *testing.T) {
 		unit:   "Count",
 		labels: []Label{{"env", "prod"}, {"region", "us-east-1"}},
 	}
-	if id1, id2 := srv.metricIdentifier(m), srv.metricIdentifier(m); id1 != id2 {
-		t.Errorf("same input → different IDs: %q vs %q", id1, id2)
-	}
+	assert.Equal(t, srv.metricIdentifier(m), srv.metricIdentifier(m))
 }
 
 func TestMetricIdentifier_labelOrderIndependent(t *testing.T) {
 	srv := &awsCloudWatchServer{}
 	m1 := metricInfo{name: "requests", labels: []Label{{"env", "prod"}, {"region", "us-east-1"}}}
 	m2 := metricInfo{name: "requests", labels: []Label{{"region", "us-east-1"}, {"env", "prod"}}}
-	if srv.metricIdentifier(m1) != srv.metricIdentifier(m2) {
-		t.Error("same labels in different order → different IDs")
-	}
+	assert.Equal(t, srv.metricIdentifier(m1), srv.metricIdentifier(m2))
 }
 
 func TestMetricIdentifier_differentNamesDifferentIDs(t *testing.T) {
@@ -94,7 +85,5 @@ func TestMetricIdentifier_differentNamesDifferentIDs(t *testing.T) {
 	labels := []Label{{"env", "prod"}}
 	id1 := srv.metricIdentifier(metricInfo{name: "requests", labels: labels})
 	id2 := srv.metricIdentifier(metricInfo{name: "latency", labels: labels})
-	if id1 == id2 {
-		t.Error("different metric names → same ID")
-	}
+	assert.NotEqual(t, id1, id2)
 }

@@ -17,48 +17,35 @@ package metrics
 import (
 	"net"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewServer_noopType_returnsNoOp(t *testing.T) {
 	srv, err := NewServer(NoOp, "ns")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := srv.(*noOpServer); !ok {
-		t.Errorf("want *noOpServer, got %T", srv)
-	}
+	require.NoError(t, err)
+	assert.IsType(t, &noOpServer{}, srv)
 }
 
 func TestNewServer_unknownType_defaultsToNoOp(t *testing.T) {
 	srv, err := NewServer(ServerType("invalid"), "ns")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := srv.(*noOpServer); !ok {
-		t.Errorf("want *noOpServer for unknown type, got %T", srv)
-	}
+	require.NoError(t, err)
+	assert.IsType(t, &noOpServer{}, srv)
 }
 
 func TestNewServer_prometheus_returnsPrometheusServer(t *testing.T) {
 	srv, err := NewServer(Prometheus, "ns", WithPort(0))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := srv.(*prometheusServer); !ok {
-		t.Errorf("want *prometheusServer, got %T", srv)
-	}
+	require.NoError(t, err)
+	assert.IsType(t, &prometheusServer{}, srv)
 }
 
 func TestNewServer_prometheusPortConflict_returnsError(t *testing.T) {
 	ln, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer ln.Close()
 
 	port := ln.Addr().(*net.TCPAddr).Port
 	_, err = NewServer(Prometheus, "ns", WithPort(port))
-	if err == nil {
-		t.Error("want error on occupied port, got nil")
-	}
+	assert.Error(t, err)
 }
