@@ -17,7 +17,7 @@ import socket
 import unittest
 from unittest.mock import patch
 
-from prometheus_client import generate_latest  # type: ignore
+from prometheus_client import CollectorRegistry, generate_latest  # type: ignore
 
 from spacearth.metrics.prometheus import PrometheusMetricServer
 
@@ -27,8 +27,8 @@ class TestPrometheusMetricServer(unittest.TestCase):
         patcher = patch("spacearth.metrics.prometheus.start_http_server")
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.server = PrometheusMetricServer("testns", {})
-        self.registry = self.server._registry  # pylint: disable=protected-access
+        self.registry = CollectorRegistry()
+        self.server = PrometheusMetricServer("testns", {}, registry=self.registry)
 
     def _output(self) -> str:
         return generate_latest(self.registry).decode("utf-8")
@@ -60,8 +60,8 @@ class TestPrometheusMetricServer(unittest.TestCase):
         self.assertIn("testns_active 1.0", self._output())
 
     def test_fixed_labels_appear_on_all_metrics(self):
-        server = PrometheusMetricServer("testns2", {"env": "prod"})
-        registry = server._registry  # pylint: disable=protected-access
+        registry = CollectorRegistry()
+        server = PrometheusMetricServer("testns2", {"env": "prod"}, registry=registry)
         server.add_observation("events", 1)
         output = generate_latest(registry).decode("utf-8")
         self.assertIn('env="prod"', output)

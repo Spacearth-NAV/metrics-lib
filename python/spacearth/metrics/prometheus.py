@@ -33,15 +33,22 @@ class PrometheusMetricServer(MetricServer):
     __histograms: dict[str, Histogram]
     __gauges: dict[str, Gauge]
 
-    def __init__(self, namespace: str, fixed_labels: dict[str, str], *, port: int = 8080):
+    def __init__(
+        self,
+        namespace: str,
+        fixed_labels: dict[str, str],
+        *,
+        port: int = 8080,
+        registry: Optional[CollectorRegistry] = None,
+    ):
         super().__init__(namespace, fixed_labels)
-        self._lock = Lock()
-        self._registry = CollectorRegistry()
-        self.__counters: dict[str, Counter] = {}
-        self.__histograms: dict[str, Histogram] = {}
-        self.__gauges: dict[str, Gauge] = {}
+        self.__lock = Lock()
+        self.__registry = registry if registry is not None else CollectorRegistry()
+        self.__counters = {}
+        self.__histograms = {}
+        self.__gauges = {}
         try:
-            start_http_server(port, registry=self._registry)
+            start_http_server(port, registry=self.__registry)
         except OSError as e:
             raise RuntimeError(f"failed to start Prometheus HTTP server on port {port}") from e
 
@@ -49,12 +56,12 @@ class PrometheusMetricServer(MetricServer):
         try:
             metric = cache[name]
         except KeyError:
-            with self._lock:
+            with self.__lock:
                 try:
                     metric = cache[name]
                 except KeyError:
                     metric = metric_class(
-                        name, "", list(merged_labels.keys()), namespace=self._namespace, registry=self._registry
+                        name, "", list(merged_labels.keys()), namespace=self._namespace, registry=self.__registry
                     )
                     cache[name] = metric
         return metric.labels(**merged_labels) if merged_labels else metric
