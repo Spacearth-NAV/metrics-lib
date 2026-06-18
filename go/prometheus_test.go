@@ -16,6 +16,7 @@ package metrics
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,25 +93,13 @@ func TestFixedLabels_appearOnMetric(t *testing.T) {
 	ps := newTestPrometheusServer(t, Label{"env", "prod"})
 	ps.AddObservation("requests", 1.0)
 
-	gathered, err := ps.registry.Gather()
-	require.NoError(t, err)
+	expected := `
+	# HELP testns_requests
+	# TYPE testns_requests counter
+	testns_requests{env="prod"} 1
+	`
 
-	var found bool
-	for _, mf := range gathered {
-		if mf.GetName() == "testns_requests" {
-			found = true
-			var labelFound bool
-			for _, lp := range mf.GetMetric()[0].GetLabel() {
-				if lp.GetName() == "env" && lp.GetValue() == "prod" {
-					labelFound = true
-					break
-				}
-			}
-			assert.True(t, labelFound, "label env=prod not found on metric")
-			break
-		}
-	}
-	require.True(t, found, "metric testns_requests not found")
+	assert.NoError(t, testutil.GatherAndCompare(ps.registry, strings.NewReader(expected), "testns_requests"))
 }
 
 func TestLabelCollision_panics(t *testing.T) {
