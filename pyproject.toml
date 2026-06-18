@@ -3,7 +3,9 @@ name = "spacearth-metrics"
 dynamic = ["version"]
 description = "Gather metrics from Python services using either AWS CloudWatch or Prometheus."
 authors = [
-    {name = "Michelle Laurenti",email = "michelle.laurenti@spacearthnav.it"}
+    {name = "Guglielmo Carandente",email = "guglielmo.carandente@spacearthnav.it"},
+    {name = "Michelle Laurenti",email = "michelle.laurenti@spacearthnav.it"},
+    {name = "Gianfranco Reppucci",email = "gianfranco.reppucci@spacearthnav.it"}
 ]
 readme = "README.md"
 license = "Apache-2.0"
@@ -57,6 +59,13 @@ line-length = 120
 [tool.isort]
 skip = [".poetry", ".venv"]
 line_length = 120
+known_first_party = ["spacearth"]
+src_paths = ["python"]
+
+[tool.mypy]
+files = ["python"]
+explicit_package_bases = true
+mypy_path = "python"
 
 [tool.pylint.main]
 ignore = [".poetry", ".venv"]

@@ -56,23 +56,28 @@ class MetricInfo:
     labels: dict[str, str]
 
 
-class AmazonCloudwatchMetricServer(MetricServer):
+class AmazonCloudwatchMetricServer(MetricServer):  # pylint: disable=too-many-instance-attributes
     """
     Publishes metrics to Amazon CloudWatch every 60 seconds.
     Metrics are published on a separate thread.
     """
 
-    __queue: Queue = Queue()
-    __metrics_lock: Lock = Lock()
-
-    __metrics: dict[str, MetricInfo] = {}
-    __observations: dict[str, dict[datetime, list[float | int]]] = defaultdict(lambda: defaultdict(list))
-    __last_values: dict[str, float | int] = defaultdict(int)
+    __queue: Queue
+    __metrics_lock: Lock
+    __metrics: dict[str, MetricInfo]
+    __observations: dict[str, dict[datetime, list[float | int]]]
+    __last_values: dict[str, float | int]
 
     def __init__(self, namespace: str, fixed_labels: dict[str, str]):
         super().__init__(namespace, fixed_labels)
         self.__logger = logging.getLogger(self.__class__.__name__)
         self.__client = boto3.client("cloudwatch")
+
+        self.__queue = Queue()
+        self.__metrics_lock = Lock()
+        self.__metrics = {}
+        self.__observations = defaultdict(lambda: defaultdict(list))
+        self.__last_values = defaultdict(int)
 
         # self.__publish_thread = Thread(target=self.__publish_loop, daemon=True)
         # self.__publish_thread.start()
@@ -81,6 +86,11 @@ class AmazonCloudwatchMetricServer(MetricServer):
         self.__export_thread = Thread(target=self.__export_loop, daemon=True)
         self.__gather_thread.start()
         self.__export_thread.start()
+
+    def flush(self) -> None:
+        """Drain pending metrics and publish immediately. Intended for tests and graceful shutdown."""
+        self.__queue.join()
+        self.__do_export(datetime.max)
 
     # pylint: disable-next=unused-private-member
     def __publish_loop(self) -> None:
@@ -159,6 +169,47 @@ class AmazonCloudwatchMetricServer(MetricServer):
             finally:
                 self.__queue.task_done()
 
+    def __do_export(self, now: datetime) -> None:
+        with self.__metrics_lock:
+            data_to_publish = []
+
+            for metric_name, metric in self.__metrics.items():
+                observations = [t for t in self.__observations[metric_name].keys() if t <= now]
+
+                for timestamp in observations:
+                    values, counts = zip(*Counter(self.__observations[metric_name][timestamp]).items())
+                    data_to_publish.append(
+                        {
+                            "MetricName": metric.name,
+                            "Timestamp": timestamp.astimezone(timezone.utc),
+                            "Values": values,
+                            "Counts": counts,
+                            "Unit": metric.unit,
+                            "Dimensions": [{"Name": k, "Value": v} for k, v in metric.labels.items()],
+                        }
+                    )
+                    del self.__observations[metric_name][timestamp]
+
+                if not observations and metric_name in self.__last_values:
+                    data_to_publish.append(
+                        {
+                            "MetricName": metric.name,
+                            "Timestamp": datetime.now(timezone.utc).replace(second=0, microsecond=0),
+                            "Value": self.__last_values[metric_name],
+                            "Unit": metric.unit,
+                            "Dimensions": [{"Name": k, "Value": v} for k, v in metric.labels.items()],
+                        }
+                    )
+
+        try:
+            if len(data_to_publish) > 0:
+                self.__client.put_metric_data(Namespace=self._namespace, MetricData=data_to_publish)  # type: ignore
+                self.__logger.info("All metrics published up to %s", now)
+            else:
+                self.__logger.info("No metrics to publish up to %s", now)
+        except Exception:  # pylint: disable=broad-exception-caught
+            self.__logger.exception("Failed to publish metrics")
+
     def __export_loop(self) -> None:
         while True:
             sleep_until = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
@@ -168,46 +219,7 @@ class AmazonCloudwatchMetricServer(MetricServer):
             time.sleep(sleep_for)
 
             self.__logger.info("Publishing metrics...")
-            with self.__metrics_lock:
-                data_to_publish = []
-
-                for metric_name, metric in self.__metrics.items():
-                    observations = [t for t in self.__observations[metric_name].keys() if t <= sleep_until]
-
-                    for timestamp in observations:
-                        values, counts = zip(*Counter(self.__observations[metric_name][timestamp]).items())
-                        data_to_publish.append(
-                            {
-                                "MetricName": metric.name,
-                                "Timestamp": timestamp.astimezone(timezone.utc),
-                                "Values": values,
-                                "Counts": counts,
-                                "Unit": metric.unit,
-                                "Dimensions": [{"Name": k, "Value": v} for k, v in metric.labels.items()],
-                            }
-                        )
-                        del self.__observations[metric_name][timestamp]
-
-                    if not observations and metric_name in self.__last_values:
-                        data_to_publish.append(
-                            {
-                                "MetricName": metric.name,
-                                "Timestamp": datetime.now(timezone.utc).replace(second=0, microsecond=0),
-                                "Value": self.__last_values[metric_name],
-                                "Unit": metric.unit,
-                                "Dimensions": [{"Name": k, "Value": v} for k, v in metric.labels.items()],
-                            }
-                        )
-
-            try:
-                if len(data_to_publish) > 0:
-                    self.__client.put_metric_data(Namespace=self._namespace, MetricData=data_to_publish)  # type: ignore
-
-                    self.__logger.info("All metrics published up to %s", sleep_until)
-                else:
-                    self.__logger.info("No metrics to publish up to %s", sleep_until)
-            except Exception:  # pylint: disable=broad-exception-caught
-                self.__logger.exception("Failed to publish metrics")
+            self.__do_export(sleep_until)
 
     def add_observation(self, name: str, value: int, labels: Optional[dict[str, str]] = None):
         self.__queue.put(MetricData("add_observation", "Count", datetime.now(), name, value, labels))
