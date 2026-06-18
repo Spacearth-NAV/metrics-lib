@@ -55,20 +55,26 @@ func TestMeasureTime_recordsHistogram(t *testing.T) {
 	ps.MeasureTime("latency", 300*time.Millisecond)
 	ps.MeasureTime("latency", 700*time.Millisecond)
 
-	gathered, err := ps.registry.Gather()
-	require.NoError(t, err)
+	expected := `
+	# HELP testns_latency
+	# TYPE testns_latency histogram
+	testns_latency_bucket{le="0.005"} 0
+	testns_latency_bucket{le="0.01"} 0
+	testns_latency_bucket{le="0.025"} 0
+	testns_latency_bucket{le="0.05"} 0
+	testns_latency_bucket{le="0.1"} 0
+	testns_latency_bucket{le="0.25"} 0
+	testns_latency_bucket{le="0.5"} 1
+	testns_latency_bucket{le="1"} 2
+	testns_latency_bucket{le="2.5"} 2
+	testns_latency_bucket{le="5"} 2
+	testns_latency_bucket{le="10"} 2
+	testns_latency_bucket{le="+Inf"} 2
+	testns_latency_sum 1
+	testns_latency_count 2
+	`
 
-	var found bool
-	for _, mf := range gathered {
-		if mf.GetName() == "testns_latency" {
-			h := mf.GetMetric()[0].GetHistogram()
-			assert.Equal(t, uint64(2), h.GetSampleCount())
-			assert.Equal(t, 1.0, h.GetSampleSum())
-			found = true
-			break
-		}
-	}
-	require.True(t, found, "metric testns_latency not found")
+	assert.NoError(t, testutil.GatherAndCompare(ps.registry, strings.NewReader(expected), "testns_latency"))
 }
 
 func TestGauge_incrementThenDecrement(t *testing.T) {
