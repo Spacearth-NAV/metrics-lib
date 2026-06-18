@@ -62,16 +62,22 @@ class AmazonCloudwatchMetricServer(MetricServer):  # pylint: disable=too-many-in
     Metrics are published on a separate thread.
     """
 
+    __queue: Queue
+    __metrics_lock: Lock
+    __metrics: dict[str, MetricInfo]
+    __observations: dict[str, dict[datetime, list[float | int]]]
+    __last_values: dict[str, float | int]
+
     def __init__(self, namespace: str, fixed_labels: dict[str, str]):
         super().__init__(namespace, fixed_labels)
         self.__logger = logging.getLogger(self.__class__.__name__)
         self.__client = boto3.client("cloudwatch")
 
-        self.__queue: Queue = Queue()
-        self.__metrics_lock: Lock = Lock()
-        self.__metrics: dict[str, MetricInfo] = {}
-        self.__observations: dict[str, dict[datetime, list[float | int]]] = defaultdict(lambda: defaultdict(list))
-        self.__last_values: dict[str, float | int] = defaultdict(int)
+        self.__queue = Queue()
+        self.__metrics_lock = Lock()
+        self.__metrics = {}
+        self.__observations = defaultdict(lambda: defaultdict(list))
+        self.__last_values = defaultdict(int)
 
         # self.__publish_thread = Thread(target=self.__publish_loop, daemon=True)
         # self.__publish_thread.start()
