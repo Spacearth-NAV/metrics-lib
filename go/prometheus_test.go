@@ -100,12 +100,31 @@ func TestFixedLabels_appearOnMetric(t *testing.T) {
 	ps.AddObservation("requests", 1.0)
 
 	expected := `
-	# HELP testns_requests
-	# TYPE testns_requests counter
-	testns_requests{env="prod"} 1
+	# HELP testns_requests_total
+	# TYPE testns_requests_total counter
+	testns_requests_total{env="prod"} 1
 	`
 
-	assert.NoError(t, testutil.GatherAndCompare(ps.registry, strings.NewReader(expected), "testns_requests"))
+	assert.NoError(t, testutil.GatherAndCompare(ps.registry, strings.NewReader(expected), "testns_requests_total"))
+}
+
+// Counters must carry the _total suffix like the official Python client adds
+// automatically, so the same logical metric gets the same name from modules
+// written in either language.
+func TestCounterName_appendsTotalSuffix(t *testing.T) {
+	ps := newTestPrometheusServer(t)
+	ps.AddObservation("requests", 1.0)
+	ps.AddObservation("messages_total", 1.0)
+
+	mfs, err := ps.registry.Gather()
+	require.NoError(t, err)
+	names := make([]string, 0, len(mfs))
+	for _, mf := range mfs {
+		names = append(names, mf.GetName())
+	}
+	assert.Contains(t, names, "testns_requests_total")
+	assert.Contains(t, names, "testns_messages_total")
+	assert.NotContains(t, names, "testns_messages_total_total")
 }
 
 func TestLabelCollision_panics(t *testing.T) {

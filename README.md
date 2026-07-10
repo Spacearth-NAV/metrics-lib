@@ -141,6 +141,10 @@ metric_server.add_observation("requests_received", 1, labels={"endpoint": "/logi
 metricsServer.AddObservation("requests_received", 1, metrics.Label{"endpoint", "/login"})
 ```
 
+With the Prometheus backend, counters are exposed with the standard `_total`
+suffix (e.g. `<namespace>_requests_received_total`). Both languages append it
+automatically unless the name already ends with it.
+
 #### Histograms — `measure_time` / `MeasureTime`
 
 Records a duration. Python accepts seconds as a `float`; Go accepts a `time.Duration`.
