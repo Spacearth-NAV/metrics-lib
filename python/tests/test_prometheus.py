@@ -67,6 +67,19 @@ class TestPrometheusMetricServer(unittest.TestCase):
         self.assertIn('env="prod"', output)
         self.assertIn("testns2_events_total", output)
 
+    def test_cloudwatch_style_namespace_is_accepted(self):
+        # Regression: deployments reuse CloudWatch-style namespaces ("NoScint/v1")
+        # for Prometheus; prometheus-client < 0.22 rejected the slash at first publish.
+        registry = CollectorRegistry()
+        server = PrometheusMetricServer("NoScint/v1", {"module": "ephemeris"}, registry=registry)
+        server.add_observation("published_zmq_messages", 1, {"topic": "trigger"})
+        value = registry.get_sample_value(
+            "NoScint/v1_published_zmq_messages_total", {"topic": "trigger", "module": "ephemeris"}
+        )
+        self.assertEqual(value, 1.0)
+        # The classic text exposition escapes the slash to an underscore.
+        self.assertIn("NoScint_v1_published_zmq_messages_total", generate_latest(registry).decode("utf-8"))
+
     def test_label_collision_raises_value_error(self):
         server = PrometheusMetricServer("testns3", {"env": "prod"})
         with self.assertRaises(ValueError) as ctx:

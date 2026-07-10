@@ -123,6 +123,23 @@ func TestSchemeLock_differentLabelKeysPanic(t *testing.T) {
 	})
 }
 
+// Regression: deployments reuse CloudWatch-style namespaces ("NoScint/v1") for
+// Prometheus; UTF-8 metric names must stay accepted even if client_golang or
+// prometheus/common change their default validation scheme again.
+func TestCloudWatchStyleNamespace_isAccepted(t *testing.T) {
+	srv, err := newPrometheusServer("NoScint/v1", 0, Label{"module", "input-manager"})
+	require.NoError(t, err)
+	ps := srv.(*prometheusServer)
+
+	assert.NotPanics(t, func() {
+		ps.AddObservation("published_zmq_messages", 1.0, Label{"topic", "trigger"})
+	})
+
+	counter := ps.getCounter("published_zmq_messages", []Label{{"topic", "trigger"}})
+	got := testutil.ToFloat64(counter.With(prometheus.Labels{"topic": "trigger", "module": "input-manager"}))
+	assert.Equal(t, 1.0, got)
+}
+
 func TestPortConflict_returnsError(t *testing.T) {
 	ln, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
