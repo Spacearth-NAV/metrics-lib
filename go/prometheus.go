@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,11 +127,21 @@ func getOrCreate[T prometheus.Collector](reg prometheus.Registerer, m *sync.Map,
 	return actual.(T)
 }
 
+// counterName appends the _total suffix required by the Prometheus naming
+// convention for counters, matching what the official Python client does
+// automatically. Names already carrying the suffix are left untouched.
+func counterName(name string) string {
+	if strings.HasSuffix(name, "_total") {
+		return name
+	}
+	return name + "_total"
+}
+
 func (p *prometheusServer) getCounter(name string, labels []Label) *prometheus.CounterVec {
 	return getOrCreate(p.registry, &p.counters, name, func() *prometheus.CounterVec {
 		return prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: p.namespace,
-			Name:      name,
+			Name:      counterName(name),
 		}, p.mergedLabelNames(labels))
 	})
 }
