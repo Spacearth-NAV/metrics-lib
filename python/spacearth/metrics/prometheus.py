@@ -19,7 +19,7 @@ This file provides a Prometheus-based metric server.
 from threading import Lock
 from typing import Optional
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, start_http_server  # type: ignore
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, start_http_server
 
 from .metric_server import MetricServer
 
