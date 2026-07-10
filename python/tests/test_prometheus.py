@@ -17,7 +17,7 @@ import socket
 import unittest
 from unittest.mock import patch
 
-from prometheus_client import CollectorRegistry, generate_latest  # type: ignore
+from prometheus_client import CollectorRegistry, generate_latest
 
 from spacearth.metrics.prometheus import PrometheusMetricServer
 
