@@ -15,11 +15,109 @@
 package metrics
 
 import (
+	"context"
+	"fmt"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// stubCloudWatch records the MetricData of every request it receives.
+type stubCloudWatch struct {
+	requests [][]*cloudwatch.MetricDatum
+}
+
+func (s *stubCloudWatch) PutMetricDataWithContext(
+	_ aws.Context,
+	input *cloudwatch.PutMetricDataInput,
+	_ ...request.Option,
+) (*cloudwatch.PutMetricDataOutput, error) {
+	s.requests = append(s.requests, input.MetricData)
+
+	return &cloudwatch.PutMetricDataOutput{}, nil
+}
+
+// newTestServer returns a server publishing to stub, with no goroutine running:
+// tests populate the pending observations and call doExport directly.
+func newTestServer(stub *stubCloudWatch) *awsCloudWatchServer {
+	return &awsCloudWatchServer{
+		namespace:    "testns",
+		client:       stub,
+		metrics:      make(map[string]metricInfo),
+		lastValues:   make(map[string]float64),
+		observations: make(map[string]map[time.Time][]float64),
+	}
+}
+
+func TestExport_splitsDistinctValuesAcrossDatums(t *testing.T) {
+	stub := &stubCloudWatch{}
+	srv := newTestServer(stub)
+	now := time.Now().UTC().Truncate(time.Minute)
+
+	observations := make([]float64, 0, 200)
+	for i := 0; i < 200; i++ {
+		observations = append(observations, float64(i))
+	}
+
+	srv.metrics["latency_id"] = metricInfo{name: "latency", unit: "Seconds"}
+	srv.observations["latency_id"] = map[time.Time][]float64{now: observations}
+
+	srv.doExport(context.Background(), now)
+
+	require.Len(t, stub.requests, 1)
+
+	datums := stub.requests[0]
+	require.Greater(t, len(datums), 1, "200 distinct values must not fit in a single datum")
+
+	published := make(map[float64]bool, 200)
+	total := 0.0
+
+	for _, datum := range datums {
+		values := aws.Float64ValueSlice(datum.Values)
+		assert.LessOrEqual(t, len(values), maxValues)
+
+		for _, v := range values {
+			published[v] = true
+		}
+
+		for _, c := range aws.Float64ValueSlice(datum.Counts) {
+			total += c
+		}
+	}
+
+	assert.Len(t, published, 200, "every distinct value must be published")
+	assert.Equal(t, 200.0, total, "every observation must be accounted for")
+}
+
+func TestExport_splitsDatumAcrossRequests(t *testing.T) {
+	stub := &stubCloudWatch{}
+	srv := newTestServer(stub)
+	now := time.Now().UTC().Truncate(time.Minute)
+
+	total := maxMetrics + 1
+	for i := 0; i < total; i++ {
+		id := fmt.Sprintf("id_%d", i)
+		srv.metrics[id] = metricInfo{name: fmt.Sprintf("metric_%d", i), unit: "Count"}
+		srv.observations[id] = map[time.Time][]float64{now: {1}}
+	}
+
+	srv.doExport(context.Background(), now)
+
+	require.Len(t, stub.requests, 2)
+
+	published := 0
+	for _, data := range stub.requests {
+		assert.LessOrEqual(t, len(data), maxMetrics)
+		published += len(data)
+	}
+
+	assert.Equal(t, total, published)
+}
 
 func TestGetCounts(t *testing.T) {
 	tests := []struct {
