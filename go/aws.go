@@ -22,9 +22,27 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 )
+
+const (
+	// PutMetricData limits: a MetricDatum accepts at most 150 entries in Values,
+	// and a single request at most 1000 MetricDatum.
+	maxValues  = 150
+	maxMetrics = 1000
+)
+
+// cloudWatchClient is the part of the CloudWatch API this server uses, so that
+// tests can supply a stub in place of a real client.
+type cloudWatchClient interface {
+	PutMetricDataWithContext(
+		ctx aws.Context,
+		input *cloudwatch.PutMetricDataInput,
+		opts ...request.Option,
+	) (*cloudwatch.PutMetricDataOutput, error)
+}
 
 type metricInfo struct {
 	name   string
@@ -43,7 +61,7 @@ type awsCloudWatchServer struct {
 	namespace   string
 	fixedLabels []Label
 
-	client *cloudwatch.CloudWatch
+	client cloudWatchClient
 
 	data   chan metricData
 	cancel context.CancelFunc
@@ -219,66 +237,87 @@ func getCounts(in []float64) (counts []float64, values []float64) {
 	return
 }
 
+func (a *awsCloudWatchServer) doExport(ctx context.Context, now time.Time) {
+	data := make([]*cloudwatch.MetricDatum, 0)
+
+	a.metricLock.Lock()
+	for metricId, info := range a.metrics {
+		foundOneObservation := false
+
+		dataByTimestamp := a.observations[metricId]
+		for timestamp, observations := range dataByTimestamp {
+			if timestamp.After(now) {
+				continue
+			}
+
+			counts, values := getCounts(observations)
+
+			// A MetricDatum accepts at most maxValues entries in Values, and a
+			// timing measured per message is a distinct value every time.
+			for i := 0; i < len(values); i += maxValues {
+				end := i + maxValues
+				if end > len(values) {
+					end = len(values)
+				}
+
+				data = append(data, &cloudwatch.MetricDatum{
+					Dimensions: a.dimensions(info),
+					MetricName: aws.String(info.name),
+					Timestamp:  aws.Time(now),
+					Unit:       aws.String(info.unit),
+					Values:     aws.Float64Slice(values[i:end]),
+					Counts:     aws.Float64Slice(counts[i:end]),
+				})
+			}
+
+			foundOneObservation = true
+			delete(dataByTimestamp, timestamp)
+		}
+
+		if value, ok := a.lastValues[metricId]; !foundOneObservation && ok {
+			data = append(data, &cloudwatch.MetricDatum{
+				Dimensions: a.dimensions(info),
+				MetricName: aws.String(info.name),
+				Timestamp:  aws.Time(now),
+				Unit:       aws.String(info.unit),
+				Value:      aws.Float64(value),
+			})
+		}
+	}
+	a.metricLock.Unlock()
+
+	if len(data) == 0 {
+		logger.Info(fmt.Sprintf("no metrics to publish up to %s", now))
+		return
+	}
+
+	// A single request accepts at most maxMetrics datum.
+	for i := 0; i < len(data); i += maxMetrics {
+		end := i + maxMetrics
+		if end > len(data) {
+			end = len(data)
+		}
+
+		_, err := a.client.PutMetricDataWithContext(ctx, &cloudwatch.PutMetricDataInput{
+			Namespace:  aws.String(a.namespace),
+			MetricData: data[i:end],
+		})
+
+		if err != nil {
+			logger.Error("failed to publish metric data", "error", err)
+			return
+		}
+	}
+
+	logger.Info(fmt.Sprintf("published all metrics up to %s", now))
+}
+
 func (a *awsCloudWatchServer) exportMetrics(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	for {
 		select {
 		case now := <-ticker.C:
-			now = now.UTC().Truncate(time.Minute)
-
-			data := make([]*cloudwatch.MetricDatum, 0)
-
-			a.metricLock.Lock()
-			for metricId, info := range a.metrics {
-				foundOneObservation := false
-
-				dataByTimestamp := a.observations[metricId]
-				for timestamp, observations := range dataByTimestamp {
-					if timestamp.After(now) {
-						continue
-					}
-
-					counts, values := getCounts(observations)
-
-					data = append(data, &cloudwatch.MetricDatum{
-						Dimensions: a.dimensions(info),
-						MetricName: aws.String(info.name),
-						Timestamp:  aws.Time(now),
-						Unit:       aws.String(info.unit),
-						Values:     aws.Float64Slice(values),
-						Counts:     aws.Float64Slice(counts),
-					})
-
-					foundOneObservation = true
-					delete(dataByTimestamp, timestamp)
-				}
-
-				if value, ok := a.lastValues[metricId]; !foundOneObservation && ok {
-					data = append(data, &cloudwatch.MetricDatum{
-						Dimensions: a.dimensions(info),
-						MetricName: aws.String(info.name),
-						Timestamp:  aws.Time(now),
-						Unit:       aws.String(info.unit),
-						Value:      aws.Float64(value),
-					})
-				}
-			}
-			a.metricLock.Unlock()
-
-			if len(data) > 0 {
-				_, err := a.client.PutMetricDataWithContext(ctx, &cloudwatch.PutMetricDataInput{
-					Namespace:  aws.String(a.namespace),
-					MetricData: data,
-				})
-
-				if err != nil {
-					logger.Error("failed to publish metric data", "error", err)
-				} else {
-					logger.Info(fmt.Sprintf("published all metrics up to %s", now))
-				}
-			} else {
-				logger.Info(fmt.Sprintf("no metrics to publish up to %s", now))
-			}
+			a.doExport(ctx, now.UTC().Truncate(time.Minute))
 
 		case <-ctx.Done():
 			ticker.Stop()

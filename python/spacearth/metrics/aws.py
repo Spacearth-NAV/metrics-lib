@@ -62,6 +62,11 @@ class AmazonCloudwatchMetricServer(MetricServer):  # pylint: disable=too-many-in
     Metrics are published on a separate thread.
     """
 
+    # PutMetricData limits: a MetricDatum accepts at most 150 entries in Values,
+    # and a single request at most 1000 MetricDatum.
+    MAX_VALUES: int = 150
+    MAX_METRICS: int = 1000
+
     __queue: Queue
     __metrics_lock: Lock
     __metrics: dict[str, MetricInfo]
@@ -178,16 +183,17 @@ class AmazonCloudwatchMetricServer(MetricServer):  # pylint: disable=too-many-in
 
                 for timestamp in observations:
                     values, counts = zip(*Counter(self.__observations[metric_name][timestamp]).items())
-                    data_to_publish.append(
-                        {
-                            "MetricName": metric.name,
-                            "Timestamp": timestamp.astimezone(timezone.utc),
-                            "Values": values,
-                            "Counts": counts,
-                            "Unit": metric.unit,
-                            "Dimensions": [{"Name": k, "Value": v} for k, v in metric.labels.items()],
-                        }
-                    )
+                    for i in range(0, len(values), self.MAX_VALUES):
+                        data_to_publish.append(
+                            {
+                                "MetricName": metric.name,
+                                "Timestamp": timestamp.astimezone(timezone.utc),
+                                "Values": values[i : i + self.MAX_VALUES],
+                                "Counts": counts[i : i + self.MAX_VALUES],
+                                "Unit": metric.unit,
+                                "Dimensions": [{"Name": k, "Value": v} for k, v in metric.labels.items()],
+                            }
+                        )
                     del self.__observations[metric_name][timestamp]
 
                 if not observations and metric_name in self.__last_values:
@@ -203,7 +209,9 @@ class AmazonCloudwatchMetricServer(MetricServer):  # pylint: disable=too-many-in
 
         try:
             if len(data_to_publish) > 0:
-                self.__client.put_metric_data(Namespace=self._namespace, MetricData=data_to_publish)  # type: ignore
+                for i in range(0, len(data_to_publish), self.MAX_METRICS):
+                    batch = data_to_publish[i : i + self.MAX_METRICS]
+                    self.__client.put_metric_data(Namespace=self._namespace, MetricData=batch)  # type: ignore
                 self.__logger.info("All metrics published up to %s", now)
             else:
                 self.__logger.info("No metrics to publish up to %s", now)

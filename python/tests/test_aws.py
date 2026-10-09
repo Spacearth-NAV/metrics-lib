@@ -56,3 +56,49 @@ class TestAWSGaugeAccumulation(unittest.TestCase):
         self.server.flush()
         self.server.flush()
         self.assertEqual(self._last_published_value("gauge_set"), 1)
+
+
+class TestAWSPublishLimits(unittest.TestCase):
+    def setUp(self):
+        self.mock_client = MagicMock()
+        patcher = patch("boto3.client", return_value=self.mock_client)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.server = AmazonCloudwatchMetricServer("testns", {})
+
+    def _published_requests(self) -> list[list[dict]]:
+        """Return the MetricData list of every put_metric_data call, in order."""
+        return [call.kwargs["MetricData"] for call in self.mock_client.put_metric_data.call_args_list]
+
+    def _published_datums(self, metric_name: str) -> list[dict]:
+        """Return every published datum for metric_name, across all calls."""
+        return [datum for data in self._published_requests() for datum in data if datum["MetricName"] == metric_name]
+
+    def test_distinct_values_are_split_across_datums(self):
+        expected = {i / 1000 for i in range(200)}
+        for value in expected:
+            self.server.measure_time("latency", value)
+        self.server.flush()
+
+        datums = self._published_datums("latency")
+
+        self.assertGreater(len(datums), 1, "200 distinct values must not fit in a single datum")
+        for datum in datums:
+            self.assertLessEqual(len(datum["Values"]), AmazonCloudwatchMetricServer.MAX_VALUES)
+
+        published = {value for datum in datums for value in datum["Values"]}
+        self.assertEqual(published, expected)
+        self.assertEqual(sum(sum(datum["Counts"]) for datum in datums), 200)
+
+    def test_datums_are_split_across_requests(self):
+        total = AmazonCloudwatchMetricServer.MAX_METRICS + 1
+        for i in range(total):
+            self.server.add_observation(f"metric_{i}", 1)
+        self.server.flush()
+
+        requests = self._published_requests()
+
+        self.assertEqual(len(requests), 2)
+        for data in requests:
+            self.assertLessEqual(len(data), AmazonCloudwatchMetricServer.MAX_METRICS)
+        self.assertEqual(sum(len(data) for data in requests), total)
