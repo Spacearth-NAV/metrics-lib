@@ -173,45 +173,53 @@ func (a *awsCloudWatchServer) publishMetrics(ctx context.Context) {
 	}
 }
 
+// store records a single datum. It holds metricLock, which doExport also takes,
+// because both goroutines touch metrics, observations and lastValues.
+func (a *awsCloudWatchServer) store(d metricData) {
+	metricId := a.metricIdentifier(d.metricInfo)
+	timestamp := d.timestamp.Truncate(time.Minute).Add(time.Minute)
+
+	a.metricLock.Lock()
+	defer a.metricLock.Unlock()
+
+	if _, ok := a.metrics[metricId]; !ok {
+		a.metrics[metricId] = d.metricInfo
+	}
+
+	if _, ok := a.observations[metricId]; !ok {
+		a.observations[metricId] = make(map[time.Time][]float64)
+	}
+
+	if _, ok := a.observations[metricId][timestamp]; !ok {
+		a.observations[metricId][timestamp] = make([]float64, 0)
+	}
+
+	value := d.value
+
+	switch d.action {
+	case "increment_value":
+		logger.Debug(fmt.Sprintf("incrementing metric value by %f", value))
+		a.lastValues[metricId] += value
+		value = a.lastValues[metricId]
+	case "decrement_value":
+		logger.Debug(fmt.Sprintf("decrementing metric value by %f", value))
+		a.lastValues[metricId] -= value
+		value = a.lastValues[metricId]
+	case "set_value":
+		logger.Debug(fmt.Sprintf("setting metric value to %f", value))
+		a.lastValues[metricId] = value
+		value = a.lastValues[metricId]
+	}
+
+	a.observations[metricId][timestamp] = append(a.observations[metricId][timestamp], value)
+}
+
 func (a *awsCloudWatchServer) gatherMetrics(ctx context.Context) {
 	for {
 		select {
 		case d := <-a.data:
 			logger.Debug(fmt.Sprintf("received metric %s", d.name), "metric", d)
-
-			metricId := a.metricIdentifier(d.metricInfo)
-			timestamp := d.timestamp.Truncate(time.Minute).Add(time.Minute)
-
-			if _, ok := a.metrics[metricId]; !ok {
-				a.metrics[metricId] = d.metricInfo
-			}
-
-			if _, ok := a.observations[metricId]; !ok {
-				a.observations[metricId] = make(map[time.Time][]float64)
-			}
-
-			if _, ok := a.observations[metricId][timestamp]; !ok {
-				a.observations[metricId][timestamp] = make([]float64, 0)
-			}
-
-			value := d.value
-
-			switch d.action {
-			case "increment_value":
-				logger.Debug(fmt.Sprintf("incrementing metric value by %f", value))
-				a.lastValues[metricId] += value
-				value = a.lastValues[metricId]
-			case "decrement_value":
-				logger.Debug(fmt.Sprintf("decrementing metric value by %f", value))
-				a.lastValues[metricId] -= value
-				value = a.lastValues[metricId]
-			case "set_value":
-				logger.Debug(fmt.Sprintf("setting metric value to %f", value))
-				a.lastValues[metricId] = value
-				value = a.lastValues[metricId]
-			}
-
-			a.observations[metricId][timestamp] = append(a.observations[metricId][timestamp], value)
+			a.store(d)
 
 		case <-ctx.Done():
 			return

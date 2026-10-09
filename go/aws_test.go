@@ -119,6 +119,35 @@ func TestExport_splitsDatumAcrossRequests(t *testing.T) {
 	assert.Equal(t, total, published)
 }
 
+// TestGatherAndExport_race runs the gather loop while exporting. It has no
+// assertion of its own: it fails under -race, or with "concurrent map read and
+// map write", if the gather loop touches the metric maps without metricLock.
+func TestGatherAndExport_race(t *testing.T) {
+	srv := newTestServer(&stubCloudWatch{})
+	srv.data = make(chan metricData)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go srv.gatherMetrics(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 1000; i++ {
+			srv.AddObservation("m", float64(i))
+		}
+	}()
+
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			srv.doExport(ctx, time.Now().Add(time.Hour))
+		}
+	}
+}
+
 func TestGetCounts(t *testing.T) {
 	tests := []struct {
 		name      string
